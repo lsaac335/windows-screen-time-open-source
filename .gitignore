@@ -1,0 +1,10 @@
+**/bin/
+**/obj/
+.dotnet/
+首版/
+data/
+**/data/
+validation/
+self-test-data/
+*.user
+*.zip

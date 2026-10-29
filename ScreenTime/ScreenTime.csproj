@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net6.0-windows</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>10.0</LangVersion>
+    <AssemblyName>ScreenTime</AssemblyName>
+    <RootNamespace>ScreenTime</RootNamespace>
+    <Version>0.2.0</Version>
+    <Title>屏幕时间</Title>
+    <Description>本地优先的 Windows 应用与亮屏时间统计</Description>
+    <RollForward>LatestMajor</RollForward>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon Condition="Exists('Assets/app.ico')">Assets/app.ico</ApplicationIcon>
+    <!-- WPF owns DPI via manifest; WinForms is used only for the tray icon. -->
+    <NoWarn>NETSDK1138;WFAC010</NoWarn>
+  </PropertyGroup>
+</Project>
