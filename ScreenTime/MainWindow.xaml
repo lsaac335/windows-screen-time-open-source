@@ -176,6 +176,12 @@
                 </StackPanel>
                 <StackPanel x:Name="SettingsPanel" Visibility="Collapsed">
                     <Border Style="{StaticResource Card}" Margin="0,0,0,16"><StackPanel>
+                        <TextBlock Text="关于屏幕时间" FontSize="15" FontWeight="SemiBold"/>
+                        <TextBlock Text="屏幕时间是一款本地运行的 Windows 使用时间统计工具。它记录屏幕亮起的时间和各应用的前台使用时长，帮助你了解时间花在哪里。" Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap" LineHeight="21" Margin="0,16,0,0"/>
+                        <TextBlock Text="支持日期与近七天统计、应用柱状图、桌面小组件、空闲过滤和 CSV 导出。数据保存在本机，不读取窗口标题、网页地址或按键内容。" Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap" LineHeight="21" Margin="0,10,0,0"/>
+                        <TextBlock Text="版本 0.2 · 开源许可：MIT" Foreground="{DynamicResource Secondary}" FontSize="10" Margin="0,12,0,0"/>
+                    </StackPanel></Border>
+                    <Border Style="{StaticResource Card}" Margin="0,0,0,16"><StackPanel>
                         <TextBlock Text="常驻与启动" FontSize="15" FontWeight="SemiBold"/>
                         <CheckBox x:Name="AutoStartCheck" Content="开机自启（登录 Windows 后启动）" FontSize="12" Margin="0,21,0,10" Checked="AutoStart_Changed" Unchecked="AutoStart_Changed"/>
                         <CheckBox x:Name="AutoStartWidgetCheck" Content="开机自启时显示小组件" FontSize="12" Margin="0,8,0,8" Checked="AutoStartWidget_Changed" Unchecked="AutoStartWidget_Changed"/>
