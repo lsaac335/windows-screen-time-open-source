@@ -13,7 +13,7 @@ public sealed class AppSettings
     public bool IdleFilterEnabled { get; set; } = true;
     public bool DarkMode { get; set; } = true;
     public bool AlwaysOnTop { get; set; }
-    public bool WidgetEnabled { get; set; }
+    public bool WidgetEnabled { get; set; } = true;
     public bool WidgetPinned { get; set; }
     public bool WidgetLocked { get; set; }
     public double? WidgetLeft { get; set; }

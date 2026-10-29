@@ -23,8 +23,8 @@ public static class SettingsSelfTests
         Check(fresh.AutoRecord && fresh.DarkMode, "new settings default to automatic recording and dark mode");
         Check(fresh.AutoStartWidget && fresh.IdleFilterEnabled, "new settings enable login widget display and idle filtering");
         Check(!fresh.AlwaysOnTop, "pinning is opt-in by default");
-        Check(!fresh.WidgetEnabled && !fresh.WidgetPinned && !fresh.WidgetLocked && fresh.WidgetLeft == null && fresh.WidgetTop == null,
-            "desktop widget is opt-in with no persisted placement by default");
+        Check(fresh.WidgetEnabled && !fresh.WidgetPinned && !fresh.WidgetLocked && fresh.WidgetLeft == null && fresh.WidgetTop == null,
+            "new settings start in widget mode with no persisted placement");
         Check(!File.Exists(path), "loading absent settings does not create a usage or settings file");
 
         const string oldJson = "{\"RecordingEnabled\":true,\"Paused\":true,\"CreatedVersion\":\"0.1.0\"}";
@@ -33,8 +33,8 @@ public static class SettingsSelfTests
         Check(migrated.AutoRecord && migrated.DarkMode, "old JSON missing new fields receives enabled defaults");
         Check(migrated.AutoStartWidget && migrated.IdleFilterEnabled, "legacy settings receive login-widget and idle-filter defaults");
         Check(migrated.RecordingEnabled && migrated.Paused && migrated.CreatedVersion == "0.1.0", "loading legacy settings preserves existing fields for the startup policy");
-        Check(!migrated.WidgetEnabled && !migrated.WidgetPinned && !migrated.WidgetLocked && migrated.WidgetLeft == null && migrated.WidgetTop == null,
-            "legacy settings do not unexpectedly enable a widget or invent placement");
+        Check(migrated.WidgetEnabled && !migrated.WidgetPinned && !migrated.WidgetLocked && migrated.WidgetLeft == null && migrated.WidgetTop == null,
+            "legacy settings use widget mode when no display preference was saved");
         Check(File.ReadAllText(path) == oldJson, "migration load alone does not rewrite legacy settings");
 
         File.WriteAllText(path, "{\"AutoRecord\":false,\"DarkMode\":false,\"RecordingEnabled\":true,\"Paused\":false}");

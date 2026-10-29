@@ -17,7 +17,6 @@ namespace ScreenTime
         private DateTime _selectedDate;
         private DateTime _lastToday;
         private bool _followToday = true;
-        private bool _compact = true;
         private bool _isWeek;
         private bool _ready;
         private bool _rendering;
@@ -35,6 +34,9 @@ namespace ScreenTime
             _controller = controller;
             _selectedDate = _lastToday = controller.Today;
             InitializeComponent();
+            var workArea = SystemParameters.WorkArea;
+            Width = Math.Min(1160, workArea.Width);
+            Height = Math.Min(830, workArea.Height);
             AppsBarChart.AppSelected += app => ShowAppDetails(app, _selectedDate, _isWeek);
             ThemeManager.Apply(this, _controller.DarkMode);
             DateSelector.SelectedDate = _selectedDate;
@@ -66,7 +68,6 @@ namespace ScreenTime
         {
             _page = "overview";
             SelectDate(_controller.Today, false);
-            SetExpanded(true);
             ShowAndActivate();
         }
 
@@ -93,13 +94,12 @@ namespace ScreenTime
                 if (_lastDarkMode != _controller.DarkMode)
                 {
                     _lastDarkMode = _controller.DarkMode;
-                    _rowCaches.Clear(); TopAppsHost.Children.Clear(); AllAppsHost.Children.Clear(); CompactAppsHost.Children.Clear();
+                    _rowCaches.Clear(); TopAppsHost.Children.Clear(); AllAppsHost.Children.Clear();
                 }
-                Topmost = _compact && _controller.AlwaysOnTop;
+                Topmost = _controller.AlwaysOnTop;
                 PinButton.IsChecked = _controller.AlwaysOnTop;
-                PinButton.Visibility = _compact ? Visibility.Visible : Visibility.Collapsed;
-                PinButton.ToolTip = _controller.AlwaysOnTop ? "取消小窗置顶" : "置顶小窗";
-                System.Windows.Automation.AutomationProperties.SetName(PinButton, _controller.AlwaysOnTop ? "取消小窗置顶" : "置顶小窗");
+                PinButton.ToolTip = _controller.AlwaysOnTop ? "取消面板置顶" : "置顶面板";
+                System.Windows.Automation.AutomationProperties.SetName(PinButton, _controller.AlwaysOnTop ? "取消面板置顶" : "置顶面板");
                 DateTime today = _controller.Today;
                 if (today != _lastToday)
                 {
@@ -125,11 +125,6 @@ namespace ScreenTime
                 WelcomePanel.Visibility = !enabled && _page != "settings" ? Visibility.Visible : Visibility.Collapsed;
                 ErrorBanner.Visibility = warning ? Visibility.Visible : Visibility.Collapsed;
                 ErrorText.Text = warning ? runtimeStatus + "。当前受影响区间不会推算为正常使用时间。" : "";
-                if (_compact)
-                {
-                    RenderCompact(enabled, paused, warning, statusColor);
-                    return;
-                }
                 AutoStartCheck.IsChecked = _controller.AutoStart;
                 AutoRecordCheck.IsChecked = _controller.AutoRecord;
                 AutoStartWidgetCheck.IsChecked = _controller.AutoStartWidget;
@@ -197,34 +192,8 @@ namespace ScreenTime
             {
                 ErrorBanner.Visibility = Visibility.Visible;
                 ErrorText.Text = "读取记录时遇到问题：" + ex.Message;
-                CompactError.Visibility = Visibility.Visible;
-                CompactErrorText.Text = "读取记录时遇到问题：" + ex.Message;
             }
             finally { _rendering = false; }
-        }
-
-        private void RenderCompact(bool enabled, bool paused, bool warning, Brush statusColor)
-        {
-            DateTime today = _controller.Today;
-            DaySummary day = _controller.GetDay(today);
-            CompactDateText.Text = today.ToString("M 月 d 日  dddd", CultureInfo.GetCultureInfo("zh-CN")) + " · 今天";
-            CompactStatusText.Text = StatusLabel.Text;
-            CompactStatusText.Foreground = statusColor;
-            CompactStatusDot.Fill = statusColor;
-            CompactCurrentApp.Text = !enabled ? "从现在开始，了解你的时间。" : paused ? "已暂停，记录不会继续增长。" : CurrentAppText.Text + " · " + _controller.DisplayStateText;
-            CompactCurrentApp.ToolTip = CompactCurrentApp.Text;
-            CompactPauseButton.Content = !enabled ? "开始记录" : paused ? "▶ 恢复" : "Ⅱ 暂停";
-            CompactWelcome.Visibility = !enabled ? Visibility.Visible : Visibility.Collapsed;
-            CompactError.Visibility = warning ? Visibility.Visible : Visibility.Collapsed;
-            CompactErrorText.Text = ErrorText.Text;
-            CompactScreenValue.Text = day.HasData ? FormatDuration(day.ScreenSeconds) : "—";
-            CompactForegroundValue.Text = day.HasData ? FormatDuration(day.ForegroundSeconds) : "—";
-            CompactChart.SetData(day.ScreenHourly, day.ForegroundHourly, Enumerable.Range(0, 24).Select(h => h.ToString("00")).ToArray(), day.HasData, "还没有记录");
-            SetHourlyCoverage(CompactChart, day, today);
-            string started = day.FirstRecorded.HasValue ? "自 " + TimeZoneInfo.ConvertTimeBySystemTimeZoneId(day.FirstRecorded.Value, _controller.TimeZoneId).ToString("HH:mm") + " 开始 · " : "";
-            CompactCoverageText.Text = started + (day.HasData ? "灰纹为未记录，浅底为未来时间" : "未记录区间不代表零使用");
-            CompactCoverageText.ToolTip = CompactCoverageText.Text;
-            UpdateAppList(CompactAppsHost, day.Apps.Take(3).ToList(), false, "还没有应用记录", "开始后切换软件，就会自动出现在这里。", true);
         }
 
         private static DaySummary Combine(List<DaySummary> days)
@@ -473,9 +442,7 @@ namespace ScreenTime
         private void Week_Click(object sender, RoutedEventArgs e) => SelectDate(_controller.Today, true);
         private void SelectDate(DateTime date, bool week) { _selectedDate = date.Date; _isWeek = week; _followToday = week || _selectedDate == _controller.Today; _ready = false; DateSelector.SelectedDate = _selectedDate; _ready = true; Render(); }
         private void Date_Changed(object? sender, SelectionChangedEventArgs e) { if (_ready && !_rendering && DateSelector.SelectedDate.HasValue) { _selectedDate = DateSelector.SelectedDate.Value.Date; _isWeek = false; _followToday = _selectedDate == _controller.Today; Render(); } }
-        private void Expand_Click(object sender, RoutedEventArgs e) => SetExpanded(true);
-        private void Collapse_Click(object sender, RoutedEventArgs e) => SetExpanded(false);
-        private void CompactAllApps_Click(object sender, RoutedEventArgs e) { _page = "apps"; SelectDate(_controller.Today, false); SetExpanded(true); }
+        private void Collapse_Click(object sender, RoutedEventArgs e) => Safe(() => WidgetRequested?.Invoke());
         private void Pin_Click(object sender, RoutedEventArgs e) => Safe(() => { _controller.AlwaysOnTop = !_controller.AlwaysOnTop; Render(); });
         private void DockMinimize_Click(object sender, RoutedEventArgs e) => SystemCommands.MinimizeWindow(this);
         private void DockMaximize_Click(object sender, RoutedEventArgs e)
@@ -484,8 +451,6 @@ namespace ScreenTime
             else SystemCommands.MaximizeWindow(this);
         }
         private void DockClose_Click(object sender, RoutedEventArgs e) => Close();
-        private void CompactSettings_Click(object sender, RoutedEventArgs e) { _page = "settings"; SetExpanded(true); }
-        private void Widget_Click(object sender, RoutedEventArgs e) => Safe(() => WidgetRequested?.Invoke());
         private void WidgetMode_Changed(object sender, RoutedEventArgs e) { if (_ready && !_rendering) Safe(() => _controller.WidgetEnabled = WidgetModeCheck.IsChecked == true); }
         private void AutoRecord_Changed(object sender, RoutedEventArgs e) { if (_ready && !_rendering) Safe(() => _controller.AutoRecord = AutoRecordCheck.IsChecked == true); }
         private void AutoStartWidget_Changed(object sender, RoutedEventArgs e) { if (_ready && !_rendering) Safe(() => _controller.AutoStartWidget = AutoStartWidgetCheck.IsChecked == true); }
@@ -493,25 +458,6 @@ namespace ScreenTime
         private void DarkMode_Changed(object sender, RoutedEventArgs e) { if (_ready && !_rendering) Safe(() => _controller.DarkMode = DarkModeCheck.IsChecked == true); }
         private void Topmost_Changed(object sender, RoutedEventArgs e) { if (_ready && !_rendering) Safe(() => _controller.AlwaysOnTop = TopmostCheck.IsChecked == true); }
         private void Exit_Click(object sender, RoutedEventArgs e) => _controller.Exit();
-        private void CompactPause_Click(object sender, RoutedEventArgs e) => Safe(() => { if (!_controller.IsRecordingEnabled) _controller.StartRecording(); else _controller.TogglePause(); Render(); });
-        private void SetExpanded(bool expanded)
-        {
-            if (_compact == !expanded) return;
-            double centerX = Left + ActualWidth / 2;
-            double centerY = Top + ActualHeight / 2;
-            _compact = !expanded;
-            WindowState = WindowState.Normal;
-            MinWidth = expanded ? 960 : 740;
-            MinHeight = expanded ? 680 : 370;
-            var area = SystemParameters.WorkArea;
-            Width = Math.Min(expanded ? 1160 : 820, area.Width);
-            Height = Math.Min(expanded ? 830 : 410, area.Height);
-            Left = Math.Max(area.Left, Math.Min(centerX - Width / 2, area.Right - Width));
-            Top = Math.Max(area.Top, Math.Min(centerY - Height / 2, area.Bottom - Height));
-            FullPanel.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
-            CompactPanel.Visibility = expanded ? Visibility.Collapsed : Visibility.Visible;
-            Render();
-        }
         private void Refresh_Click(object sender, RoutedEventArgs e) => Safe(() => { _controller.Refresh(); Render(); });
         private void Start_Click(object sender, RoutedEventArgs e) => StartRecording();
         private void StartRecording() => Safe(() =>
