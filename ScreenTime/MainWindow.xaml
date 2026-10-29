@@ -68,7 +68,7 @@
                         <TextBlock Text="只属于你的记录" Foreground="#D7DDF0" FontSize="11"/>
                         <TextBlock Text="本地保存 · 无需登录" Foreground="{DynamicResource SidebarMuted}" FontSize="10" Margin="0,7,0,0"/>
                         <Border Height="1" Background="{DynamicResource Line}" Margin="0,14,0,11"/>
-                        <TextBlock Text="Windows  ·  版本 0.2" Foreground="{DynamicResource SidebarMuted}" FontSize="10"/>
+                        <TextBlock Text="Windows  ·  版本 0.2.1" Foreground="{DynamicResource SidebarMuted}" FontSize="10"/>
                     </StackPanel>
                 </Border>
             </Grid>
@@ -179,7 +179,7 @@
                         <TextBlock Text="关于屏幕时间" FontSize="15" FontWeight="SemiBold"/>
                         <TextBlock Text="屏幕时间是一款本地运行的 Windows 使用时间统计工具。它记录屏幕亮起的时间和各应用的前台使用时长，帮助你了解时间花在哪里。" Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap" LineHeight="21" Margin="0,16,0,0"/>
                         <TextBlock Text="支持日期与近七天统计、应用柱状图、桌面小组件、空闲过滤和 CSV 导出。数据保存在本机，不读取窗口标题、网页地址或按键内容。" Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap" LineHeight="21" Margin="0,10,0,0"/>
-                        <TextBlock Text="版本 0.2 · 开源许可：MIT" Foreground="{DynamicResource Secondary}" FontSize="10" Margin="0,12,0,0"/>
+                        <TextBlock Text="版本 0.2.1 · 开源许可：MIT" Foreground="{DynamicResource Secondary}" FontSize="10" Margin="0,12,0,0"/>
                     </StackPanel></Border>
                     <Border Style="{StaticResource Card}" Margin="0,0,0,16"><StackPanel>
                         <TextBlock Text="常驻与启动" FontSize="15" FontWeight="SemiBold"/>
@@ -213,7 +213,7 @@
                         <TextBlock Text="这些数字意味着什么" FontSize="15" FontWeight="SemiBold"/>
                         <TextBlock Text="亮屏时长：Windows 报告显示处于开启或变暗的时间，包含锁屏亮屏，多屏不叠加。&#10;&#10;前台使用时长：解锁且亮屏时，有前台焦点的应用时间，不含屏幕时间自身。开启空闲过滤后还会排除连续 5 分钟无操作之后的区间。查看本软件时只累计亮屏，不计应用时间。后台音乐、下载和并排但未获焦点的窗口不重复累计。&#10;&#10;未记录：暂停、程序未运行或状态未知的区间，不能解释为零使用。首次启用前的历史无法追溯。&#10;&#10;外接显示器的物理电源状态可能与系统报告存在差异；首版统计的是本地会话显示状态。" FontSize="11" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" LineHeight="21" Margin="0,18,0,0"/>
                         <Border Height="1" Background="{DynamicResource Line}" Margin="0,22,0,15"/>
-                        <TextBlock Text="屏幕时间 0.2 · 本地优先的 Windows 使用记录" Foreground="{DynamicResource Secondary}" FontSize="10"/>
+                        <TextBlock Text="屏幕时间 0.2.1 · 本地优先的 Windows 使用记录" Foreground="{DynamicResource Secondary}" FontSize="10"/>
                         <Button Content="退出程序" Style="{StaticResource RoundButton}" HorizontalAlignment="Left" Margin="0,15,0,0" Click="Exit_Click" ToolTip="停止记录并退出（Ctrl+Q）"/>
                     </StackPanel></Border>
                 </StackPanel>

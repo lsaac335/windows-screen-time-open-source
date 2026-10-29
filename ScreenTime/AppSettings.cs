@@ -18,7 +18,7 @@ public sealed class AppSettings
     public bool WidgetLocked { get; set; }
     public double? WidgetLeft { get; set; }
     public double? WidgetTop { get; set; }
-    public string CreatedVersion { get; set; } = "0.2.0";
+    public string CreatedVersion { get; set; } = "0.2.1";
 
     public void PrepareForLaunch(bool autoStart = false, bool forceWidget = false)
     {

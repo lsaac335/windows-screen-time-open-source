@@ -231,7 +231,7 @@ public sealed class AppController : IAppController, IDisposable
         var widget = System.Windows.Application.Current?.Windows.OfType<WidgetWindow>().FirstOrDefault();
         var snapshot = new
         {
-            Version = "0.2.0", ProcessId = Environment.ProcessId,
+            Version = "0.2.1", ProcessId = Environment.ProcessId,
             Runtime = Environment.Version.ToString(), UpdatedAt = DateTimeOffset.Now,
             RecordingEnabled = IsRecordingEnabled, Paused = IsPaused,
             AutoRecord = AutoRecord, AutoStartWidget, IdleFilterEnabled,
