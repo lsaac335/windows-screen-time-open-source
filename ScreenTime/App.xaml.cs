@@ -1,10 +1,8 @@
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Windows;
-using System.Windows.Interop;
 using Forms = System.Windows.Forms;
 
 namespace ScreenTime;
@@ -23,11 +21,19 @@ public partial class App : Application
     private bool _widgetMode;
     private bool _shuttingDown;
     private bool _quietWidgetStart;
+    private bool _viewCleanupQueued;
 
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
         _quietWidgetStart = e.Args.Contains("--tray");
+        if (e.Args.Contains("--media-self-test"))
+        {
+            var output = Arg(e.Args, "--test-output") ?? Path.Combine(AppContext.BaseDirectory, "media-test.txt");
+            try { File.WriteAllText(output, MediaSessionSelfTests.Run()); Shutdown(0); }
+            catch (Exception ex) { File.WriteAllText(output, ex.ToString()); Shutdown(1); }
+            return;
+        }
         if (e.Args.Contains("--sampler-self-test"))
         {
             var output = Arg(e.Args, "--test-output") ?? Path.Combine(AppContext.BaseDirectory, "sampler-test.txt");
@@ -38,7 +44,7 @@ public partial class App : Application
         if (e.Args.Contains("--self-test"))
         {
             var output = Arg(e.Args, "--test-output") ?? Path.Combine(AppContext.BaseDirectory, "self-test.txt");
-            try { File.WriteAllText(output, CoreSelfTests.Run() + Environment.NewLine + SettingsSelfTests.Run() + Environment.NewLine + IdleFilterSelfTests.Run() + Environment.NewLine + NativeTimingSelfTests.Run()); Shutdown(0); }
+            try { File.WriteAllText(output, CoreSelfTests.Run() + Environment.NewLine + SettingsSelfTests.Run() + Environment.NewLine + IdleFilterSelfTests.Run() + Environment.NewLine + NativeTimingSelfTests.Run() + Environment.NewLine + ActivityEvidenceSelfTests.Run()); Shutdown(0); }
             catch (Exception ex) { File.WriteAllText(output, ex.ToString()); Shutdown(1); }
             return;
         }
@@ -54,22 +60,18 @@ public partial class App : Application
             // Login launch shows the widget even if the previous session used the
             // main panel. Reuse the normal reveal path to keep it visible/recoverable.
             if (_controller.WidgetEnabled) _quietWidgetStart = false;
-            _window = new MainWindow(_controller);
-            _window.WidgetRequested += RevealWidget;
-            MainWindow = _window;
-            var handle = new WindowInteropHelper(_window).EnsureHandle();
-            _controller.Attach(handle);
-            _controller.ExitRequested += () => { _shuttingDown = true; _widget?.PrepareForExit(); _window.PrepareForExit(); Shutdown(); };
+            _controller.Attach();
+            _controller.ExitRequested += () => { _shuttingDown = true; _widget?.PrepareForExit(); _window?.PrepareForExit(); Shutdown(); };
             SetupTray();
             _controller.Updated += UpdateWidgetMode;
-            _activationWait = ThreadPool.RegisterWaitForSingleObject(_activation, (_, _) => Dispatcher.BeginInvoke(new Action(() => _window.ShowAndActivate())), null, Timeout.Infinite, false);
+            _activationWait = ThreadPool.RegisterWaitForSingleObject(_activation, (_, _) => Dispatcher.BeginInvoke(new Action(() => ShowPanel())), null, Timeout.Infinite, false);
             DispatcherUnhandledException += (_, args) =>
             {
                 args.Handled = true;
                 MessageBox.Show("操作未完成：\n" + args.Exception.Message + "\n\n已有记录不会被自动删除。", "屏幕时间", MessageBoxButton.OK, MessageBoxImage.Warning);
             };
             if (_controller.WidgetEnabled) UpdateWidgetMode();
-            else if (!e.Args.Contains("--tray")) _window.ShowAndActivate();
+            else if (!e.Args.Contains("--tray")) ShowPanel();
             _quietWidgetStart = false;
         }
         catch (Exception ex)
@@ -85,13 +87,13 @@ public partial class App : Application
     }
     private void SetupTray()
     {
-        if (_controller == null || _window == null) return;
+        if (_controller == null) return;
         var menu = new Forms.ContextMenuStrip();
-        menu.Items.Add("打开屏幕时间", null, (_, _) => _window.ShowAndActivate());
+        menu.Items.Add("打开屏幕时间", null, (_, _) => ShowPanel());
         _widgetItem = new Forms.ToolStripMenuItem("显示小组件", null, (_, _) =>
         {
             try { RevealWidget(); }
-            catch (Exception ex) { MessageBox.Show(_window, "组件设置未保存：" + ex.Message, "屏幕时间", MessageBoxButton.OK, MessageBoxImage.Warning); }
+            catch (Exception ex) { MessageBox.Show("组件设置未保存：" + ex.Message, "屏幕时间", MessageBoxButton.OK, MessageBoxImage.Warning); }
         });
         menu.Items.Add(_widgetItem);
         _pauseItem = new Forms.ToolStripMenuItem("开始记录", null, (_, _) => _controller.TogglePause());
@@ -101,7 +103,7 @@ public partial class App : Application
         menu.Items.Add("退出", null, (_, _) => _controller.Exit());
         var icon = System.Drawing.Icon.ExtractAssociatedIcon(Environment.ProcessPath ?? "ScreenTime.exe") ?? System.Drawing.SystemIcons.Application;
         _tray = new Forms.NotifyIcon { Icon = icon, Text = "屏幕时间 · 尚未开始", Visible = true, ContextMenuStrip = menu };
-        _tray.DoubleClick += (_, _) => _window.ShowAndActivate();
+        _tray.DoubleClick += (_, _) => ShowPanel();
         _controller.Updated += UpdateTray;
         UpdateTray();
     }
@@ -115,7 +117,7 @@ public partial class App : Application
     }
     private void UpdateWidgetMode()
     {
-        if (_shuttingDown || _controller == null || _window == null) return;
+        if (_shuttingDown || _controller == null) return;
         if (!Dispatcher.CheckAccess()) { Dispatcher.BeginInvoke(new Action(UpdateWidgetMode)); return; }
         bool enabled = _controller.WidgetEnabled;
         if (_widgetMode == enabled) return;
@@ -124,36 +126,73 @@ public partial class App : Application
         {
             EnsureWidget();
             _widget?.ShowWidget(reveal: !_quietWidgetStart);
-            _window.Hide();
+            ReleasePanel();
         }
         else
         {
             _widget?.Hide();
-            _window.ShowAndActivate();
+            ShowPanel();
         }
     }
     private void RevealWidget()
     {
-        if (_shuttingDown || _controller == null || _window == null) return;
+        if (_shuttingDown || _controller == null) return;
         _controller.WidgetEnabled = true;
         EnsureWidget();
         _widget?.ShowWidget(reveal: true);
-        if (_widget?.IsVisible == true) _window.Hide();
+        if (_widget?.IsVisible == true) ReleasePanel();
     }
     private void EnsureWidget()
     {
-        if (_widget != null || _controller == null || _window == null) return;
+        if (_widget != null || _controller == null) return;
         var widget = new WidgetWindow(_controller);
         _widget = widget;
-        widget.OpenDashboardRequested += () => _window.ShowDashboard();
+        widget.OpenDashboardRequested += () => ShowPanel(true);
         widget.Closed += (_, _) =>
         {
             if (ReferenceEquals(_widget, widget)) _widget = null;
-            // Explorer can destroy a desktop child during a shell restart. The recorder's
-            // hidden main HWND remains independent, so recreate only the view if needed.
+            // Sampling owns its own HWND, so recreating the component never stops recording.
             if (!_shuttingDown && _controller.WidgetEnabled)
                 Dispatcher.BeginInvoke(new Action(() => { if (_shuttingDown || !_controller.WidgetEnabled) return; EnsureWidget(); _widget?.ShowWidget(); }));
         };
+    }
+    private void ShowPanel(bool dashboard = false)
+    {
+        if (_shuttingDown || _controller == null) return;
+        if (_window == null)
+        {
+            var panel = new MainWindow(_controller);
+            _window = panel;
+            MainWindow = panel;
+            panel.WidgetRequested += RevealWidget;
+            panel.Closed += (_, _) =>
+            {
+                panel.WidgetRequested -= RevealWidget;
+                if (ReferenceEquals(_window, panel)) _window = null;
+                if (ReferenceEquals(MainWindow, panel)) MainWindow = _widget;
+                _controller.TrimViewCaches();
+                QueueViewCleanup();
+            };
+        }
+        if (dashboard) _window.ShowDashboard();
+        else _window.ShowAndActivate();
+    }
+    private void ReleasePanel()
+    {
+        _window?.Close();
+    }
+    private void QueueViewCleanup()
+    {
+        if (_viewCleanupQueued || _shuttingDown) return;
+        _viewCleanupQueued = true;
+        // Wait until close handlers release their local view references. This is a
+        // user-triggered transition, not a periodic collection or working-set trim.
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            _viewCleanupQueued = false;
+            if (!_shuttingDown && _window == null)
+                GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: false);
+        }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
     }
     protected override void OnExit(ExitEventArgs e)
     {

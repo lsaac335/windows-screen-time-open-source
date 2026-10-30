@@ -94,7 +94,7 @@
                         <TextBlock Text="只属于你的记录" Foreground="#D7DDF0" FontSize="11"/>
                         <TextBlock Text="本地保存 · 无需登录" Foreground="{DynamicResource SidebarMuted}" FontSize="10" Margin="0,7,0,0"/>
                         <Border Height="1" Background="{DynamicResource Line}" Margin="0,14,0,11"/>
-                        <TextBlock Text="Windows  ·  版本 0.3.0" Foreground="{DynamicResource SidebarMuted}" FontSize="10"/>
+                        <TextBlock Text="Windows  ·  版本 0.4.0" Foreground="{DynamicResource SidebarMuted}" FontSize="10"/>
                     </StackPanel>
                 </Border>
             </Grid>
@@ -207,6 +207,11 @@
                         </Grid>
                         <Grid Margin="0,0,0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="110"/><ColumnDefinition Width="60"/></Grid.ColumnDefinitions><TextBlock Text="应用 · 点击查看详情" Foreground="{DynamicResource Secondary}" FontSize="10"/><TextBlock Grid.Column="1" x:Name="AppDurationHeading" Text="活跃时长" Foreground="{DynamicResource Secondary}" FontSize="10" HorizontalAlignment="Right"/><TextBlock Grid.Column="2" Text="占比" Foreground="{DynamicResource Secondary}" FontSize="10" HorizontalAlignment="Right"/></Grid>
                         <StackPanel x:Name="AllAppsHost"/>
+                        <StackPanel x:Name="AppPages" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0" Visibility="Collapsed">
+                            <Button x:Name="PreviousAppPage" Content="上一页" Style="{StaticResource RoundButton}" Click="PreviousApps_Click"/>
+                            <TextBlock x:Name="AppPageText" VerticalAlignment="Center" Foreground="{DynamicResource Muted}" FontSize="11" Margin="14,0"/>
+                            <Button x:Name="NextAppPage" Content="下一页" Style="{StaticResource RoundButton}" Click="NextApps_Click"/>
+                        </StackPanel>
                     </StackPanel></Border>
                 </StackPanel>
                 <StackPanel x:Name="SettingsPanel" Visibility="Collapsed">
@@ -214,7 +219,7 @@
                         <TextBlock Text="关于屏幕时间" FontSize="15" FontWeight="SemiBold"/>
                         <TextBlock Text="屏幕时间是一款本地运行的 Windows 使用时间统计工具。它记录屏幕亮起的时间和各应用的前台使用时长，帮助你了解时间花在哪里。" Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap" LineHeight="21" Margin="0,16,0,0"/>
                         <TextBlock Text="支持日期与近七天统计、应用柱状图、桌面小组件、空闲过滤和 CSV 导出。数据保存在本机，不读取窗口标题、网页地址或按键内容。" Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap" LineHeight="21" Margin="0,10,0,0"/>
-                        <TextBlock Text="版本 0.3.0 · 开源许可：MIT" Foreground="{DynamicResource Secondary}" FontSize="10" Margin="0,12,0,0"/>
+                        <TextBlock Text="版本 0.4.0 · 开源许可：MIT" Foreground="{DynamicResource Secondary}" FontSize="10" Margin="0,12,0,0"/>
                     </StackPanel></Border>
                     <Border Style="{StaticResource Card}" Margin="0,0,0,16"><StackPanel>
                         <TextBlock Text="常驻与启动" FontSize="15" FontWeight="SemiBold"/>
@@ -240,6 +245,10 @@
                             <TextBlock Text="后视为空闲" FontSize="11" VerticalAlignment="Center" Margin="12,0,0,0"/>
                         </StackPanel>
                         <TextBlock x:Name="IdleRuleDescription" Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap" LineHeight="21"/>
+                        <CheckBox x:Name="MediaDetectionCheck" Content="播放媒体时保留前台活跃计时" FontSize="12" Margin="0,18,0,8" Checked="MediaDetection_Changed" Unchecked="MediaDetection_Changed"/>
+                        <TextBlock Text="按需开启，适合经常看视频。仅当系统播放来源与前台应用明确匹配时补计空闲，详情标注“媒体推测”。不计后台音乐；浏览器无法确认具体标签页。播放不能证明本人在场。追求最低占用时可关闭并重启软件。" Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap" LineHeight="21"/>
+                        <CheckBox x:Name="GamepadDetectionCheck" Content="识别手柄输入（按需开启）" FontSize="12" Margin="0,16,0,8" Checked="GamepadDetection_Changed" Unchecked="GamepadDetection_Changed"/>
+                        <TextBlock Text="支持 XInput 手柄。仅连接不算操作；摇杆使用死区过滤。未连接时每 5 秒探测，连接后每 0.25 秒检查有效输入，只作用于当时的前台应用。" Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap" LineHeight="21"/>
                     </StackPanel></Border>
                     <Border Style="{StaticResource Card}" Margin="0,0,0,16"><StackPanel>
                         <TextBlock Text="本地数据" FontSize="15" FontWeight="SemiBold"/>
@@ -255,7 +264,7 @@
                         <TextBlock Text="这些数字意味着什么" FontSize="15" FontWeight="SemiBold"/>
                         <TextBlock Text="亮屏时长：Windows 报告显示处于开启或变暗的时间，包含锁屏亮屏，多屏不叠加。&#10;&#10;前台时长：解锁且亮屏时，应用获得前台焦点的时间，包含空闲；查看本软件时只累计亮屏。后台音乐、下载和并排但未获焦点的窗口不重复累计。&#10;&#10;活跃时长：按记录时的空闲设置，从前台时长中扣除超过阈值的无操作区间。它是估计值，阅读、视频和手柄操作可能被判为空闲。&#10;&#10;旧版本记录未保留空闲时的应用归属。包含旧记录时，前台时长显示“≥”，表示至少已有这么长，不能精确补算。&#10;&#10;未记录：暂停、程序未运行或状态未知的区间，不能解释为零使用。首次启用前的历史无法追溯。外接显示器的物理电源状态可能与系统报告存在差异。" FontSize="11" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" LineHeight="21" Margin="0,18,0,0"/>
                         <Border Height="1" Background="{DynamicResource Line}" Margin="0,22,0,15"/>
-                        <TextBlock Text="屏幕时间 0.3.0 · 本地优先的 Windows 使用记录" Foreground="{DynamicResource Secondary}" FontSize="10"/>
+                        <TextBlock Text="屏幕时间 0.4.0 · 本地优先的 Windows 使用记录" Foreground="{DynamicResource Secondary}" FontSize="10"/>
                         <Button Content="退出程序" Style="{StaticResource RoundButton}" HorizontalAlignment="Left" Margin="0,15,0,0" Click="Exit_Click" ToolTip="停止记录并退出（Ctrl+Q）"/>
                     </StackPanel></Border>
                 </StackPanel>

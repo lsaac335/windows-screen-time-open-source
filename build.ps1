@@ -2,6 +2,7 @@ param([string]$Configuration = 'Release')
 $ErrorActionPreference = 'Stop'
 $taskRoot = $PSScriptRoot
 $env:DOTNET_CLI_HOME = Join-Path $taskRoot '.dotnet'
+$env:NUGET_PACKAGES = Join-Path $taskRoot '.nuget\packages'
 $env:DOTNET_SKIP_FIRST_TIME_EXPERIENCE = '1'
 $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
 $outputDirectory = Join-Path $taskRoot '首版'

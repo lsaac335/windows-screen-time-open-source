@@ -15,7 +15,7 @@ public sealed class AppController : IAppController, IDisposable
     private readonly string _settingsPath;
     private readonly DispatcherTimer _timer;
     private TrackingService? _tracker;
-    private IntPtr _handle;
+    private bool _attached;
     private string? _error;
     private int _ticks;
     private bool _disposed;
@@ -69,6 +69,34 @@ public sealed class AppController : IAppController, IDisposable
             _settings.IdleTimeoutMinutes = value;
             try { _settings.Save(_settingsPath); }
             catch { _settings.IdleTimeoutMinutes = previous; _tracker?.SetIdleTimeoutMinutes(previous); throw; }
+            Updated?.Invoke();
+        }
+    }
+    public bool MediaDetectionEnabled
+    {
+        get => _settings.MediaDetectionEnabled;
+        set
+        {
+            if (value == _settings.MediaDetectionEnabled) return;
+            bool previous = _settings.MediaDetectionEnabled;
+            _tracker?.SetMediaDetection(value);
+            _settings.MediaDetectionEnabled = value;
+            try { _settings.Save(_settingsPath); }
+            catch { _settings.MediaDetectionEnabled = previous; _tracker?.SetMediaDetection(previous); throw; }
+            Updated?.Invoke();
+        }
+    }
+    public bool GamepadDetectionEnabled
+    {
+        get => _settings.GamepadDetectionEnabled;
+        set
+        {
+            if (value == _settings.GamepadDetectionEnabled) return;
+            bool previous = _settings.GamepadDetectionEnabled;
+            _tracker?.SetGamepadDetection(value);
+            _settings.GamepadDetectionEnabled = value;
+            try { _settings.Save(_settingsPath); }
+            catch { _settings.GamepadDetectionEnabled = previous; _tracker?.SetGamepadDetection(previous); throw; }
             Updated?.Invoke();
         }
     }
@@ -187,14 +215,13 @@ public sealed class AppController : IAppController, IDisposable
         _settings = AppSettings.Load(_settingsPath);
         _settings.PrepareForLaunch(autoStart, forceWidget);
         _store = new UsageStore(dataDirectory);
-        _store.Prune();
         _timer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(1) };
         _timer.Tick += OnTick;
     }
 
-    public void Attach(IntPtr windowHandle)
+    public void Attach()
     {
-        _handle = windowHandle;
+        _attached = true;
         if (_settings.RecordingEnabled) EnsureTracker();
         _settings.Save(_settingsPath);
         _timer.Start();
@@ -202,9 +229,9 @@ public sealed class AppController : IAppController, IDisposable
 
     private void EnsureTracker()
     {
-        if (_tracker != null || _handle == IntPtr.Zero) return;
+        if (_tracker != null || !_attached) return;
         _tracker = new TrackingService(_settings.IdleFilterEnabled, _settings.IdleTimeoutMinutes,
-            _settings.IdleTimeoutOverrides, _settings.Paused);
+            _settings.IdleTimeoutOverrides, _settings.Paused, MediaDetectionEnabled, GamepadDetectionEnabled);
     }
 
     public void StartRecording()
@@ -264,10 +291,13 @@ public sealed class AppController : IAppController, IDisposable
         var widget = System.Windows.Application.Current?.Windows.OfType<WidgetWindow>().FirstOrDefault();
         var snapshot = new
         {
-            Version = "0.3.0", ProcessId = Environment.ProcessId,
+            Version = "0.4.0", ProcessId = Environment.ProcessId,
+            DashboardWindows = System.Windows.Application.Current?.Windows.OfType<MainWindow>().Count(),
+            FullGcCollections = GC.CollectionCount(GC.MaxGeneration),
             Runtime = Environment.Version.ToString(), UpdatedAt = DateTimeOffset.Now,
             RecordingEnabled = IsRecordingEnabled, Paused = IsPaused,
-            AutoRecord = AutoRecord, AutoStartWidget, IdleFilterEnabled, IdleTimeoutMinutes,
+            AutoRecord = AutoRecord, AutoStartWidget, IdleFilterEnabled, IdleTimeoutMinutes, MediaDetectionEnabled, GamepadDetectionEnabled,
+            CachedDays = _store.CachedDayCount, CachedIcons = _icons.Count,
             AppIdleRuleCount = _settings.IdleTimeoutOverrides.Count,
             SamplerThreadId = _tracker?.SamplerThreadId, SamplerTicks = _tracker?.SampleCount,
             SamplerPendingSegments = _tracker?.PendingSegments,
@@ -315,6 +345,7 @@ public sealed class AppController : IAppController, IDisposable
                 var image = new System.Windows.Media.Imaging.BitmapImage();
                 image.BeginInit();
                 image.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                image.DecodePixelWidth = 32;
                 image.UriSource = new Uri(file);
                 image.EndInit();
                 image.Freeze();
@@ -346,8 +377,18 @@ public sealed class AppController : IAppController, IDisposable
         }
         catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is ArgumentException || ex is System.ComponentModel.Win32Exception || ex is NotSupportedException) { }
         // A null before the first native path resolution is retried on the next refresh.
-        if (source != null) _icons[appId] = source;
+        if (source != null)
+        {
+            // Views retain the icons they currently display; cap only the shared lookup cache.
+            if (_icons.Count >= 64) _icons.Remove(_icons.Keys.First());
+            _icons[appId] = source;
+        }
         return source;
+    }
+    public void TrimViewCaches()
+    {
+        _store.TrimCache(1);
+        _icons.Clear();
     }
     private void ClearIconCache()
     {

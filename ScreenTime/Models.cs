@@ -20,6 +20,7 @@ public class UsageSegment
     public string AppName { get; set; } = "";
     // False on older recordings, whose excluded idle time cannot be reconstructed.
     public bool ActivityTracked { get; set; }
+    public string ActivityBasis { get; set; } = "";
 }
 
 public class AppUsage
@@ -28,6 +29,8 @@ public class AppUsage
     public string Name { get; set; } = "";
     public double Seconds { get; set; }
     public double ForegroundSeconds { get; set; }
+    public double MediaSeconds { get; set; }
+    public double GamepadSeconds { get; set; }
     public double Share { get; set; }
 }
 

@@ -17,6 +17,9 @@ public static class TrackingServiceSelfTests
             checks++;
         }
         var parts = new List<UsageSegment>();
+        using (var lightweight = new TrackingService(true, 5, new Dictionary<string, int>(), paused: true, mediaDetection: false))
+            Check(!AppDomain.CurrentDomain.GetAssemblies().Any(a => a.GetName().Name == "Microsoft.Windows.SDK.NET"),
+                "media-disabled sampling must not load the Windows media projection assembly");
         using var service = new TrackingService(true, 5, new Dictionary<string, int>(), paused: true);
         Check(service.SamplerThreadId != Environment.CurrentManagedThreadId && service.SamplerThreadId > 0,
             "native sampling is owned by a different thread");
@@ -24,6 +27,13 @@ public static class TrackingServiceSelfTests
         // The sampler must keep its own message pump and split the interval normally.
         Thread.Sleep(4500);
         Check(service.SampleCount >= 3, "sampling continues while the UI thread cannot pump messages");
+        Check(service.DiagnosticText.Contains("media=ready"), "system media API initializes on the independent sampler");
+        service.SetGamepadDetection(true);
+        Check(service.DiagnosticText.Contains("gamepad=disconnected") || service.DiagnosticText.Contains("gamepad=connected:"), "XInput initializes without making a resting or absent pad active");
+        service.SetGamepadDetection(false);
+        service.SetMediaDetection(false);
+        Check(service.DiagnosticText.Contains("media=off") && service.DiagnosticText.Contains("gamepad=off"), "optional monitors release on disable");
+        service.SetMediaDetection(true);
         service.Flush();
         int before = service.PendingSegments;
         bool failureObserved = false;

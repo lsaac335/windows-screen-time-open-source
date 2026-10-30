@@ -16,6 +16,13 @@ public sealed class UsageStore
     private readonly TimeZoneInfo _zone;
     private readonly Dictionary<string, DayFile> _days = new(StringComparer.Ordinal);
     private readonly HashSet<string> _dirty = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _knownDays = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _summaryDirty = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, long> _access = new(StringComparer.Ordinal);
+    private long _accessCounter;
+    public int CachedDayCount => _days.Count;
+    public int SummaryCalculationCount { get; private set; }
+    public const int MaximumCachedDays = 8;
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = false };
     private static readonly HashSet<string> KnownKinds = new() { "app", UsageRules.IdleAppKind, UsageRules.ScreenOnlyKind, "locked", "screenoff", "unknown", "paused", "gap" };
 
@@ -56,18 +63,58 @@ public sealed class UsageStore
             string key = Path.GetFileNameWithoutExtension(path);
             if (!DateTime.TryParseExact(key, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
                 continue;
-            var day = ReadJson<DayFile>(path);
-            if (day.Version is not (1 or 2) || day.Date != key || day.Summary == null)
-                throw new InvalidDataException("记录文件结构无效：" + Path.GetFileName(path) + "。原始文件已保留。" );
-            ValidateDay(day, path);
-            // Preserve the original before changing schema; a backup failure must abort
-            // migration so the first v2 save cannot overwrite the only v1 copy.
-            if (day.Version == 1 && !File.Exists(path + ".pre-v2")) File.Copy(path, path + ".pre-v2", false);
-            bool migrated = MigrateActivityMetrics(day);
-            _days.Add(key, day);
-            if (ExcludeSelf(day) || migrated) _dirty.Add(key);
+            _knownDays.Add(key);
         }
         Prune();
+        string todayKey = Today().ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        if (_knownDays.Contains(todayKey)) LoadDay(todayKey);
+        TrimCache(1);
+    }
+
+    private DayFile LoadDay(string key)
+    {
+        if (!_days.TryGetValue(key, out var day))
+        {
+            string path = DayPath(key);
+            day = ReadJson<DayFile>(path);
+            if (day.Version is not (1 or 2) || day.Date != key || day.Summary == null)
+                throw new InvalidDataException("记录文件结构无效：" + Path.GetFileName(path) + "。原始文件已保留。");
+            ValidateDay(day, path);
+            if (day.Version == 1 && !File.Exists(path + ".pre-v2")) File.Copy(path, path + ".pre-v2", false);
+            bool migrated = MigrateActivityMetrics(day);
+            if (ExcludeSelf(day) || migrated) WriteAtomic(path, day);
+            // Rebuild once on loading detail rather than trusting an externally edited aggregate.
+            if (day.Segments != null) day.Summary = Calculate(day);
+            _days.Add(key, day);
+        }
+        _access[key] = ++_accessCounter;
+        return day;
+    }
+
+    private void EnsureSummary(string key, DayFile day)
+    {
+        if (_summaryDirty.Remove(key) && day.Segments != null) day.Summary = Calculate(day);
+    }
+
+    private void SaveDay(string key, DayFile day)
+    {
+        EnsureSummary(key, day);
+        WriteAtomic(DayPath(key), day);
+        _dirty.Remove(key);
+    }
+
+    public void TrimCache(int maximumDays = MaximumCachedDays)
+    {
+        string today = Today().ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        // The byte estimate bounds retained detail, in addition to a fixed date count.
+        long Estimate() => _days.Values.Sum(d => 2048L + (d.Segments?.Sum(s => 128L + 2L * (s.AppId.Length + s.AppName.Length)) ?? 0));
+        while (_days.Count > Math.Max(1, maximumDays) || (_days.Count > 1 && Estimate() > 10 * 1024 * 1024))
+        {
+            string? oldest = _days.Keys.Where(k => k != today).OrderBy(k => _access.TryGetValue(k, out long value) ? value : 0).FirstOrDefault();
+            if (oldest == null) break;
+            if (_dirty.Contains(oldest)) SaveDay(oldest, _days[oldest]);
+            _days.Remove(oldest); _access.Remove(oldest); _summaryDirty.Remove(oldest);
+        }
     }
 
     public void Add(UsageSegment segment)
@@ -92,30 +139,41 @@ public sealed class UsageStore
             DateTimeOffset partEnd = end < boundary ? end : boundary;
             double portion = seconds * ((partEnd - cursor).TotalSeconds / wallSeconds);
             string key = local.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-            if (!_days.TryGetValue(key, out var day))
+            DayFile day;
+            if (_knownDays.Contains(key)) day = LoadDay(key);
+            else
+            {
+                _knownDays.Add(key);
                 _days[key] = day = new DayFile { Date = key, Version = 2 };
+                _access[key] = ++_accessCounter;
+            }
             if (day.Segments == null)
                 throw new InvalidOperationException("不能向已归档为汇总的历史日期写入新片段。" );
             var part = new UsageSegment
             {
-                Start = cursor, End = partEnd, Seconds = portion, Kind = kind, ActivityTracked = segment.ActivityTracked,
+                Start = cursor, End = partEnd, Seconds = portion, Kind = kind, ActivityTracked = segment.ActivityTracked, ActivityBasis = segment.ActivityBasis,
                 AppId = IsAppKind(kind) ? (string.IsNullOrWhiteSpace(segment.AppId) ? "unknown" : segment.AppId) : "",
                 AppName = IsAppKind(kind) ? (string.IsNullOrWhiteSpace(segment.AppName) ? "未识别应用" : segment.AppName) : ""
             };
             AppendUncovered(day, part);
             _dirty.Add(key);
+            _summaryDirty.Add(key);
             cursor = partEnd;
         }
+        TrimCache();
     }
 
     public DaySummary GetDay(DateTime date)
     {
         string key = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-        if (!_days.TryGetValue(key, out var day))
+        if (!_knownDays.Contains(key))
             return new DaySummary { Date = key, HasHourlyDetails = date.Date >= Today().AddDays(-89) };
-        if (day.Segments != null) day.Summary = Calculate(day);
+        var day = LoadDay(key);
+        EnsureSummary(key, day);
         // Return a detached value so a UI filter cannot modify persisted aggregate state.
-        return Clone(day.Summary);
+        var result = Clone(day.Summary);
+        TrimCache();
+        return result;
     }
 
     public List<DaySummary> GetWeek(DateTime endingDate)
@@ -130,10 +188,9 @@ public sealed class UsageStore
         foreach (string key in _dirty.ToArray())
         {
             if (!_days.TryGetValue(key, out var day)) continue;
-            if (day.Segments != null) day.Summary = Calculate(day);
-            WriteAtomic(DayPath(key), day);
-            _dirty.Remove(key);
+            SaveDay(key, day);
         }
+        TrimCache();
     }
 
     public void ExportCsv(string path, DateTime start, DateTime end)
@@ -153,7 +210,7 @@ public sealed class UsageStore
                     .Append(day.HasData ? "true" : "false").Append(',').Append(day.HasGaps ? "true" : "false").Append(',')
                     .Append(Csv(metric)).Append(',').Append(Csv(name)).Append(',')
                     .Append(seconds.HasValue ? seconds.Value.ToString("0.######", CultureInfo.InvariantCulture) : "")
-                    .Append(",3,").AppendLine(day.HasLegacyActivity ? "true" : "false");
+                    .Append(",4,").AppendLine(day.HasLegacyActivity ? "true" : "false");
             }
             if (!day.HasData)
             {
@@ -171,6 +228,8 @@ public sealed class UsageStore
             {
                 Row("app_active", app.Name, app.Seconds);
                 Row("app_foreground", app.Name, app.ForegroundSeconds);
+                Row("app_media_inferred", app.Name, app.MediaSeconds);
+                Row("app_gamepad", app.Name, app.GamepadSeconds);
             }
         }
         File.WriteAllText(path, text.ToString(), new UTF8Encoding(true));
@@ -179,7 +238,7 @@ public sealed class UsageStore
     public void DeleteRange(DateTime start, DateTime end)
     {
         if (end.Date < start.Date) throw new ArgumentException("结束日期不能早于开始日期。");
-        foreach (var key in _days.Keys.ToArray())
+        foreach (var key in _knownDays.ToArray())
         {
             DateTime day = DateTime.ParseExact(key, "yyyy-MM-dd", CultureInfo.InvariantCulture);
             if (day >= start.Date && day <= end.Date)
@@ -189,6 +248,7 @@ public sealed class UsageStore
                 File.Delete(DayPath(key) + ".tmp");
                 File.Delete(DayPath(key) + ".pre-v2");
                 _days.Remove(key);
+                _knownDays.Remove(key); _access.Remove(key); _summaryDirty.Remove(key);
                 _dirty.Remove(key);
             }
         }
@@ -200,12 +260,13 @@ public sealed class UsageStore
 
     public void DeleteAll()
     {
-        foreach (var key in _days.Keys.ToArray())
+        foreach (var key in _knownDays.ToArray())
         {
             File.Delete(DayPath(key));
             File.Delete(DayPath(key) + ".tmp");
             File.Delete(DayPath(key) + ".pre-v2");
             _days.Remove(key);
+            _knownDays.Remove(key); _access.Remove(key); _summaryDirty.Remove(key);
             _dirty.Remove(key);
         }
         foreach (var temporary in TemporaryDayFiles()) File.Delete(temporary.Path);
@@ -215,7 +276,7 @@ public sealed class UsageStore
     public void Prune()
     {
         DateTime today = Today();
-        foreach (string key in _days.Keys.ToArray())
+        foreach (string key in _knownDays.ToArray())
         {
             DateTime date = DateTime.ParseExact(key, "yyyy-MM-dd", CultureInfo.InvariantCulture);
             if (date < today.AddDays(-364))
@@ -223,12 +284,15 @@ public sealed class UsageStore
                 File.Delete(DayPath(key));
                 File.Delete(DayPath(key) + ".tmp");
                 _days.Remove(key);
+                _knownDays.Remove(key); _access.Remove(key); _summaryDirty.Remove(key);
                 _dirty.Remove(key);
             }
-            else if (date < today.AddDays(-89) && _days[key].Segments != null)
+            else if (date < today.AddDays(-89))
             {
-                var day = _days[key];
+                var day = LoadDay(key);
+                if (day.Segments == null) { TrimCache(); continue; }
                 day.Summary = Calculate(day);
+                _summaryDirty.Remove(key);
                 day.Summary.HasHourlyDetails = false;
                 day.Summary.ForegroundHourly = new double[24];
                 day.Summary.RawForegroundHourly = new double[24];
@@ -254,6 +318,7 @@ public sealed class UsageStore
 
     private DaySummary Calculate(DayFile day)
     {
+        SummaryCalculationCount++;
         var result = new DaySummary { Date = day.Date };
         var apps = new Dictionary<string, AppUsage>(StringComparer.OrdinalIgnoreCase);
         var segments = day.Segments ?? new List<UsageSegment>();
@@ -288,6 +353,8 @@ public sealed class UsageStore
                 {
                     result.ForegroundSeconds += item.Seconds;
                     app.Seconds += item.Seconds;
+                    if (item.ActivityBasis == "media") app.MediaSeconds += item.Seconds;
+                    if (item.ActivityBasis == "gamepad") app.GamepadSeconds += item.Seconds;
                 }
             }
             AddHourly(result, item);
@@ -365,12 +432,12 @@ public sealed class UsageStore
             {
                 Start = range.Start, End = range.End,
                 Seconds = part.Seconds * ((range.End - range.Start).TotalSeconds / (part.End - part.Start).TotalSeconds),
-                Kind = part.Kind, AppId = part.AppId, AppName = part.AppName, ActivityTracked = part.ActivityTracked
+                Kind = part.Kind, AppId = part.AppId, AppName = part.AppName, ActivityTracked = part.ActivityTracked, ActivityBasis = part.ActivityBasis
             };
             // Merge only contiguous, equal-rate intervals. Preserve gaps and proportional durations.
             var last = segments.LastOrDefault();
             if (last != null && last.End == piece.Start && last.Kind == piece.Kind &&
-                last.AppId == piece.AppId && last.AppName == piece.AppName && last.ActivityTracked == piece.ActivityTracked &&
+                last.AppId == piece.AppId && last.AppName == piece.AppName && last.ActivityTracked == piece.ActivityTracked && last.ActivityBasis == piece.ActivityBasis &&
                 Math.Abs(last.Seconds / (last.End - last.Start).TotalSeconds - piece.Seconds / (piece.End - piece.Start).TotalSeconds) < 0.000001)
             {
                 last.End = piece.End;
@@ -525,7 +592,7 @@ public sealed class UsageStore
         ObservedHourly = day.ObservedHourly.ToArray(), UnknownHourly = day.UnknownHourly.ToArray(),
         AppHourly = day.AppHourly.ToDictionary(p => p.Key, p => p.Value.ToArray(), StringComparer.OrdinalIgnoreCase),
         AppForegroundHourly = day.AppForegroundHourly.ToDictionary(p => p.Key, p => p.Value.ToArray(), StringComparer.OrdinalIgnoreCase),
-        Apps = day.Apps.Select(a => new AppUsage { AppId = a.AppId, Name = a.Name, Seconds = a.Seconds, ForegroundSeconds = a.ForegroundSeconds, Share = a.Share }).ToList()
+        Apps = day.Apps.Select(a => new AppUsage { AppId = a.AppId, Name = a.Name, Seconds = a.Seconds, ForegroundSeconds = a.ForegroundSeconds, Share = a.Share, MediaSeconds = a.MediaSeconds, GamepadSeconds = a.GamepadSeconds }).ToList()
     };
 
     private static void ValidateDay(DayFile day, string path)
@@ -538,7 +605,8 @@ public sealed class UsageStore
             throw new InvalidDataException("记录片段损坏：" + Path.GetFileName(path) + "。原始文件已保留。" );
         if (day.Segments == null && (!Good(day.Summary.ScreenSeconds) || !Good(day.Summary.ForegroundSeconds) ||
             !Good(day.Summary.LockedSeconds) || !Good(day.Summary.ObservedSeconds) || !Good(day.Summary.UnknownSeconds) || day.Summary.Apps == null ||
-            day.Summary.Apps.Any(a => a == null || !Good(a.Seconds) || a.AppId == null || a.Name == null) ||
+            day.Summary.Apps.Any(a => a == null || !Good(a.Seconds) || !Good(a.MediaSeconds) || !Good(a.GamepadSeconds) ||
+                a.MediaSeconds + a.GamepadSeconds > a.Seconds + .0001 || a.AppId == null || a.Name == null) ||
             !GoodHours(day.Summary.ScreenHourly) || !GoodHours(day.Summary.ForegroundHourly) ||
             !GoodHours(day.Summary.ObservedHourly) || !GoodHours(day.Summary.UnknownHourly) || !GoodMap(day.Summary.AppHourly) ||
             (day.Version == 2 && (!Good(day.Summary.RawForegroundSeconds) || day.Summary.RawForegroundSeconds + .000001 < day.Summary.ForegroundSeconds ||

@@ -34,10 +34,11 @@ public sealed class TrackingService : IDisposable
     public int SampleCount => _snapshot.Ticks;
     public int PendingSegments => _segments.Count;
 
-    public TrackingService(bool idleFilter, int timeoutMinutes, IReadOnlyDictionary<string, int> overrides, bool paused)
+    public TrackingService(bool idleFilter, int timeoutMinutes, IReadOnlyDictionary<string, int> overrides, bool paused,
+        bool mediaDetection = true, bool gamepadDetection = false)
     {
         var copiedRules = new Dictionary<string, int>(overrides, StringComparer.OrdinalIgnoreCase);
-        _thread = new Thread(() => Run(idleFilter, timeoutMinutes, copiedRules, paused))
+        _thread = new Thread(() => Run(idleFilter, timeoutMinutes, copiedRules, paused, mediaDetection, gamepadDetection))
         { IsBackground = true, Name = "ScreenTime.NativeSampler" };
         _thread.SetApartmentState(ApartmentState.STA);
         _thread.Start();
@@ -50,7 +51,7 @@ public sealed class TrackingService : IDisposable
         }
     }
 
-    private void Run(bool filter, int timeoutMinutes, IReadOnlyDictionary<string, int> overrides, bool paused)
+    private void Run(bool filter, int timeoutMinutes, IReadOnlyDictionary<string, int> overrides, bool paused, bool mediaDetection, bool gamepadDetection)
     {
         try
         {
@@ -63,6 +64,8 @@ public sealed class TrackingService : IDisposable
             _tracker.Faulted += ex => { _samplingError = ex.Message; Publish(); };
             _tracker.StateChanged += Publish;
             _tracker.Start(paused);
+            _tracker.SetMediaDetection(mediaDetection);
+            _tracker.SetGamepadDetection(gamepadDetection);
             _timer = new DispatcherTimer(DispatcherPriority.Background, _dispatcher)
             { Interval = TimeSpan.FromSeconds(1) };
             _timer.Tick += (_, _) =>
@@ -117,6 +120,8 @@ public sealed class TrackingService : IDisposable
 
     public void SetPaused(bool paused) => Invoke(t => t.SetPaused(paused));
     public void SetIdleFilter(bool enabled) => Invoke(t => t.SetIdleFilter(enabled));
+    public void SetMediaDetection(bool enabled) => Invoke(t => t.SetMediaDetection(enabled));
+    public void SetGamepadDetection(bool enabled) => Invoke(t => t.SetGamepadDetection(enabled));
     public void SetIdleTimeoutMinutes(int minutes) => Invoke(t => t.SetIdleTimeoutMinutes(minutes));
     public void SetAppIdleTimeoutMinutes(string appId, int? minutes) => Invoke(t => t.SetAppIdleTimeoutMinutes(appId, minutes));
     public void Flush() => Invoke(t => t.Flush());

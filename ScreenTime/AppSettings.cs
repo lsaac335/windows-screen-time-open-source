@@ -12,6 +12,8 @@ public sealed class AppSettings
     public bool AutoRecord { get; set; } = true;
     public bool AutoStartWidget { get; set; } = true;
     public bool IdleFilterEnabled { get; set; } = true;
+    public bool MediaDetectionEnabled { get; set; }
+    public bool GamepadDetectionEnabled { get; set; }
     public int IdleTimeoutMinutes { get; set; } = 5;
     public Dictionary<string, int> IdleTimeoutOverrides { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public bool DarkMode { get; set; } = true;
@@ -21,7 +23,7 @@ public sealed class AppSettings
     public bool WidgetLocked { get; set; }
     public double? WidgetLeft { get; set; }
     public double? WidgetTop { get; set; }
-    public string CreatedVersion { get; set; } = "0.3.0";
+    public string CreatedVersion { get; set; } = "0.4.0";
 
     public static bool IsValidIdleTimeout(int minutes, bool allowNever = false) =>
         minutes is 1 or 3 or 5 or 10 or 15 or 30 || (allowNever && minutes == 0);

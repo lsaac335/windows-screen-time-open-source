@@ -80,8 +80,8 @@ public static class CoreSelfTests
         string csvPath = Path.Combine(root, "export.csv");
         store.ExportCsv(csvPath, today, today.AddDays(1));
         string csv = File.ReadAllText(csvPath);
-        Check(csv.Contains("'  =HYPERLINK") && csv.Contains(",30,3"), "CSV formula safety and invariant numeric seconds");
-        Check(csv.Contains("\"coverage\",\"无有效记录\",,3"), "unobserved day is not a false zero");
+        Check(csv.Contains("'  =HYPERLINK") && csv.Contains(",30,4"), "CSV formula safety and invariant numeric seconds");
+        Check(csv.Contains("\"coverage\",\"无有效记录\",,4"), "unobserved day is not a false zero");
         store.Save();
         var reloaded = new UsageStore(store.DataDirectory);
         Check(Near(reloaded.GetDay(today).ForegroundSeconds, store.GetDay(today).ForegroundSeconds), "save and reload");
@@ -155,8 +155,9 @@ public static class CoreSelfTests
         File.WriteAllText(legacyPath, File.ReadAllText(legacyPath).Replace(legacySelfId, UsageRules.SelfAppId).Replace("\"Version\":2", "\"Version\":1"));
         string legacyOriginal = File.ReadAllText(legacyPath);
         var legacyMigratedStore = new UsageStore(legacyDirectory);
-        Check(File.ReadAllText(legacyPath + ".pre-v2") == legacyOriginal, "schema upgrade keeps an exact original backup before writing v2");
+        Check(legacyMigratedStore.CachedDayCount == 0 && !File.Exists(legacyPath + ".pre-v2"), "historical detail is not eagerly loaded or migrated");
         var legacyAfter = legacyMigratedStore.GetDay(legacyDate);
+        Check(File.ReadAllText(legacyPath + ".pre-v2") == legacyOriginal, "schema upgrade keeps an exact original backup before writing v2");
         Check(Near(legacyAfter.ForegroundSeconds, 30) && legacyAfter.Apps.Count == 1 &&
               legacyAfter.Apps[0].AppId == "legacy-editor" && Near(legacyAfter.Apps[0].Share, 1), "legacy detail migration removes only self foreground and recomputes shares");
         Check(Near(legacyAfter.ScreenSeconds, legacyBefore.ScreenSeconds) && Near(legacyAfter.ObservedSeconds, legacyBefore.ObservedSeconds) &&
@@ -181,8 +182,8 @@ public static class CoreSelfTests
         string migratedCsvPath = Path.Combine(root, "self-exclusion.csv");
         legacyReload.ExportCsv(migratedCsvPath, legacyDate, legacyDate);
         string migratedCsv = File.ReadAllText(migratedCsvPath);
-        Check(!migratedCsv.Contains(legacySelfName) && migratedCsv.Contains("\"active\",\"活跃时长（扣除空闲）\",30,3") &&
-              migratedCsv.Contains("\"screen\",\"亮屏时长\",140,3"), "CSV exports corrected activity with retained screen total and rule version 3");
+        Check(!migratedCsv.Contains(legacySelfName) && migratedCsv.Contains("\"active\",\"活跃时长（扣除空闲）\",30,4") &&
+              migratedCsv.Contains("\"screen\",\"亮屏时长\",140,4"), "CSV exports corrected activity with retained screen total and rule version 4");
 
         // Archived summaries have no raw intervals left; migration must not fabricate any.
         string archiveDirectory = Path.Combine(root, "legacy-self-archive");
@@ -292,8 +293,8 @@ public static class CoreSelfTests
         string dualCsvPath = Path.Combine(root, "dual-metrics.csv");
         dual.ExportCsv(dualCsvPath, mixedDate, dualDate.AddDays(1));
         string dualCsv = File.ReadAllText(dualCsvPath);
-        Check(dualCsv.Contains("ForegroundIsLowerBound") && dualCsv.Contains("\"foreground\",\"前台时长（旧记录仅为下限）\",180,3,true") &&
-              dualCsv.Contains("\"app_active\",\"reader\",60,3,false") && dualCsv.Contains("\"app_foreground\",\"reader\",120,3,false"),
+        Check(dualCsv.Contains("ForegroundIsLowerBound") && dualCsv.Contains("\"foreground\",\"前台时长（旧记录仅为下限）\",180,4,true") &&
+              dualCsv.Contains("\"app_active\",\"reader\",60,4,false") && dualCsv.Contains("\"app_foreground\",\"reader\",120,4,false"),
             "CSV explicitly distinguishes active, foreground and legacy lower-bound values");
         DateTime rawArchiveDate = today.AddDays(-91);
         dual.Add(new UsageSegment { Start = At(rawArchiveDate.AddHours(8)), End = At(rawArchiveDate.AddHours(8).AddMinutes(1)),
@@ -359,7 +360,7 @@ public static class CoreSelfTests
         File.WriteAllText(blockedOriginal, legacyOriginal);
         Directory.CreateDirectory(blockedOriginal + ".pre-v2");
         bool migrationBlocked = false;
-        try { _ = new UsageStore(blockedBackupDirectory); } catch (IOException) { migrationBlocked = true; }
+        try { _ = new UsageStore(blockedBackupDirectory).GetDay(legacyDate); } catch (IOException) { migrationBlocked = true; }
         Check(migrationBlocked && File.ReadAllText(blockedOriginal) == legacyOriginal, "backup failure stops migration without changing the original");
 
         string inconsistentDirectory = Path.Combine(root, "inconsistent-metrics");
@@ -380,6 +381,48 @@ public static class CoreSelfTests
         bool failedSafely = false;
         try { _ = new UsageStore(corrupted); } catch (InvalidDataException) { failedSafely = true; }
         Check(failedSafely && File.Exists(Path.Combine(corrupted, today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + ".json")), "corrupt data preserved, not silently reset");
+
+        var bounded = new UsageStore(Path.Combine(root, "bounded-cache"));
+        for (int age = 0; age < 20; age++)
+        {
+            DateTimeOffset t = At(today.AddDays(-age).AddHours(9));
+            bounded.Add(new UsageSegment { Start = t, End = t.AddSeconds(60), Seconds = 60,
+                Kind = "app", AppId = "player", AppName = "播放器", ActivityTracked = true,
+                ActivityBasis = age % 2 == 0 ? "media" : "gamepad" });
+        }
+        Check(bounded.CachedDayCount <= UsageStore.MaximumCachedDays, "dirty date cache is bounded and saves evictions");
+        bounded.Save();
+        var lazy = new UsageStore(bounded.DataDirectory);
+        Check(lazy.CachedDayCount == 1, "cold startup pins only today");
+        foreach (int age in Enumerable.Range(0, 20))
+        {
+            var saved = lazy.GetDay(today.AddDays(-age));
+            Check(Near(saved.ForegroundSeconds, 60) && Near(saved.RawForegroundSeconds, 60) &&
+                Near(saved.Apps.Single().MediaSeconds + saved.Apps.Single().GamepadSeconds, 60), "evicted date retains totals and inference basis: " + age);
+        }
+        Check(lazy.CachedDayCount <= UsageStore.MaximumCachedDays, "sequential history browsing stays bounded");
+        _ = lazy.GetDay(today);
+        int calculated = lazy.SummaryCalculationCount;
+        for (int i = 0; i < 20; i++) _ = lazy.GetDay(today);
+        Check(lazy.SummaryCalculationCount == calculated, "unchanged summary is not recalculated per refresh");
+        lazy.TrimCache(1);
+        Check(lazy.CachedDayCount == 1, "collapsing panel releases all other dates");
+        lazy.DeleteRange(today.AddDays(-12), today.AddDays(-12));
+        Check(!new UsageStore(lazy.DataDirectory).GetDay(today.AddDays(-12)).HasData, "uncached date deletion survives restart");
+        var beforeAdd = lazy.GetDay(today);
+        DateTimeOffset additional = At(today.AddHours(10));
+        lazy.Add(new UsageSegment { Start = additional, End = additional.AddSeconds(10), Seconds = 10, Kind = "app", AppId = "player", AppName = "播放器", ActivityTracked = true });
+        Check(Near(lazy.GetDay(today).ForegroundSeconds, beforeAdd.ForegroundSeconds + 10) && lazy.SummaryCalculationCount == calculated + 1, "new input invalidates summary exactly once");
+        lazy.DeleteAll();
+        Check(!new UsageStore(lazy.DataDirectory).GetDay(today).HasData, "delete all includes uncached dates");
+        var lazyCorruptDirectory = Path.Combine(root, "lazy-corrupt");
+        _ = new UsageStore(lazyCorruptDirectory);
+        string lazyCorruptPath = Path.Combine(lazyCorruptDirectory, today.AddDays(-2).ToString("yyyy-MM-dd") + ".json");
+        File.WriteAllText(lazyCorruptPath, "{invalid historical file");
+        var lazyCorrupt = new UsageStore(lazyCorruptDirectory);
+        bool rejectedHistory = false;
+        try { _ = lazyCorrupt.GetDay(today.AddDays(-2)); } catch (InvalidDataException) { rejectedHistory = true; }
+        Check(rejectedHistory && File.ReadAllText(lazyCorruptPath) == "{invalid historical file", "lazy load detects corrupt history without replacing it");
 
         // The unique, explicitly-owned temporary directory is the only recursive cleanup target.
         string resolved = Path.GetFullPath(root);

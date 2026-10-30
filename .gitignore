@@ -1,6 +1,8 @@
 **/bin/
 **/obj/
 .dotnet/
+.nuget/
+qa/
 首版/
 data/
 **/data/

@@ -18,6 +18,8 @@ public interface IAppController
     bool AutoRecord { get; set; }
     bool AutoStartWidget { get; set; }
     bool IdleFilterEnabled { get; set; }
+    bool MediaDetectionEnabled { get; set; }
+    bool GamepadDetectionEnabled { get; set; }
     int IdleTimeoutMinutes { get; set; }
     int? GetAppIdleTimeoutMinutes(string appId);
     void SetAppIdleTimeoutMinutes(string appId, int? minutes);

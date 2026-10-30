@@ -1,7 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net6.0-windows</TargetFramework>
+    <TargetFramework>net6.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
     <PlatformTarget>x64</PlatformTarget>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
@@ -10,7 +11,7 @@
     <LangVersion>10.0</LangVersion>
     <AssemblyName>ScreenTime</AssemblyName>
     <RootNamespace>ScreenTime</RootNamespace>
-    <Version>0.3.0</Version>
+    <Version>0.4.0</Version>
     <Title>屏幕时间</Title>
     <Description>本地优先的 Windows 应用与亮屏时间统计</Description>
     <RollForward>LatestMajor</RollForward>

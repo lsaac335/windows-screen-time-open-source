@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
@@ -27,6 +28,12 @@ public sealed class NativeTracker : IDisposable
     private readonly ForegroundEventClock _eventClock = new(Stopwatch.Frequency);
     private readonly Queue<(IntPtr Window, uint Time)> _foregroundEvents = new();
     private bool _handlingForeground;
+    private IMediaSessionMonitor? _media;
+    private readonly GamepadMonitor _gamepad;
+    private HashSet<string> _playingSources = new(StringComparer.OrdinalIgnoreCase);
+    private string? _foregroundPath, _foregroundAumid;
+    private bool _mediaMatched;
+    private long? _gamepadInputStamp;
     private IntPtr _powerNotification;
     private IntPtr _foregroundHook;
     private bool _sessionNotifications;
@@ -57,7 +64,10 @@ public sealed class NativeTracker : IDisposable
     public string TimingDiagnostic => _timingIssue ?? "event-time";
     private bool FilterCurrentApp => _idleFilterEnabled && EffectiveIdleTimeoutMinutes > 0;
     public double? InputIdleSeconds { get; private set; }
-    public bool IsIdle => FilterCurrentApp && InputIdleSeconds >= EffectiveIdleTimeoutMinutes * 60d && _snapshot.Kind == "app";
+    private bool GamepadRecent => _gamepadInputStamp.HasValue &&
+        (Stopwatch.GetTimestamp() - _gamepadInputStamp.Value) / (double)Stopwatch.Frequency < EffectiveIdleTimeoutMinutes * 60d;
+    public bool IsIdle => FilterCurrentApp && InputIdleSeconds >= EffectiveIdleTimeoutMinutes * 60d &&
+        _snapshot.Kind == "app" && !_mediaMatched && !GamepadRecent;
 
     public event Action<UsageSegment>? SegmentReady;
     public event Action? StateChanged;
@@ -96,6 +106,11 @@ public sealed class NativeTracker : IDisposable
             if (_foregroundHook == IntPtr.Zero) return "切换监听异常 · 定时校验中";
             if (TimingDegraded) return "计时校正中 · 部分区间未记录";
             if (IsIdle) return "空闲中 · 活跃计时已暂停";
+            if (_snapshot.Kind == "app" && FilterCurrentApp && InputIdleSeconds >= EffectiveIdleTimeoutMinutes * 60d)
+            {
+                if (_mediaMatched) return "记录中 · 媒体推测";
+                if (GamepadRecent) return "记录中 · 手柄输入";
+            }
             return "正在记录";
         }
     }
@@ -109,7 +124,7 @@ public sealed class NativeTracker : IDisposable
         $"idleFilter={_idleFilterEnabled}; idleTimeoutMinutes={EffectiveIdleTimeoutMinutes}; " +
         $"inputIdleSeconds={InputIdleSeconds?.ToString("F1") ?? "unknown"}; " +
         $"foregroundDelayMs={LastForegroundEventDelayMilliseconds?.ToString("F1") ?? "unknown"}; " +
-        $"lateEvents={_lateEventCount}; timing={TimingDiagnostic}";
+        $"lateEvents={_lateEventCount}; timing={TimingDiagnostic}; media={_media?.Status ?? "off"}; mediaMatched={_mediaMatched}; gamepad={_gamepad.Status}";
 
     /// <summary>For local icon extraction only. Paths are never added to usage segments or files.</summary>
     public string? GetApplicationPath(string appId)
@@ -137,8 +152,48 @@ public sealed class NativeTracker : IDisposable
         _source = HwndSource.FromHwnd(hwnd) ?? throw new InvalidOperationException("无法连接窗口消息。 ");
         _sessionId = Process.GetCurrentProcess().SessionId;
         _foregroundCallback = ForegroundChanged;
+        _gamepad = new GamepadMonitor(() =>
+        {
+            if (_disposed || !_started) return;
+            Commit();
+            // A controller has no HWND ownership. Accept its input only for the app currently
+            // holding foreground focus, never as evidence across a subsequent app switch.
+            if (_snapshot.Kind == "app") _gamepadInputStamp = Stopwatch.GetTimestamp();
+            StateChanged?.Invoke();
+        });
         _source.AddHook(WindowMessage);
     }
+
+    public void SetMediaDetection(bool enabled)
+    {
+        if (enabled)
+        {
+            _media ??= MediaSessionMonitor.Create(MediaChanged);
+            _media.SetEnabled(true);
+        }
+        else if (_media != null)
+        {
+            _media.SetEnabled(false);
+            _media.Dispose(); _media = null;
+        }
+    }
+    private void MediaChanged(HashSet<string> sources)
+    {
+        if (_disposed) return;
+        if (_started) Commit();
+        _playingSources = sources;
+        MatchMedia();
+        StateChanged?.Invoke();
+    }
+    public void SetGamepadDetection(bool enabled)
+    {
+        if (_started) Commit();
+        _gamepadInputStamp = null;
+        _gamepad.SetEnabled(enabled);
+        StateChanged?.Invoke();
+    }
+    private void MatchMedia() => _mediaMatched = _snapshot.Kind == "app" &&
+        _playingSources.Any(source => ActivityEvidence.SourceMatches(source, _foregroundPath, _foregroundAumid));
 
     public void Start(bool paused)
     {
@@ -331,6 +386,8 @@ public sealed class NativeTracker : IDisposable
                 ? new(UsageRules.ScreenOnlyKind, "", "")
                 : new("app", app.Id, app.Name);
         }
+        if (previous != _snapshot) _gamepadInputStamp = null;
+        MatchMedia();
         if (previous != _snapshot) StateChanged?.Invoke();
     }
 
@@ -371,11 +428,19 @@ public sealed class NativeTracker : IDisposable
             Kind = gap ? "gap" : _snapshot.Kind,
             AppId = gap ? "" : _snapshot.Id,
             AppName = gap ? "" : _snapshot.Name,
-            ActivityTracked = true
+            ActivityTracked = true,
+            ActivityBasis = !FilterCurrentApp ? "foreground" : "input"
         };
         foreach (var part in IdleTimeFilter.Split(segment, FilterCurrentApp, previousIdleSeconds,
                      InputIdleSeconds, Math.Max(1, EffectiveIdleTimeoutMinutes) * 60d))
-            SegmentReady?.Invoke(part);
+        {
+            double? padEnd = _gamepadInputStamp.HasValue ?
+                Math.Max(0, (endStamp - _gamepadInputStamp.Value) / (double)Stopwatch.Frequency - (end - part.End).TotalSeconds) : null;
+            double? padStart = padEnd.HasValue ? Math.Max(0, padEnd.Value - (part.End - part.Start).TotalSeconds) : null;
+            foreach (var supplemented in ActivityEvidence.Supplement(part, _mediaMatched, padStart, padEnd,
+                         Math.Max(1, EffectiveIdleTimeoutMinutes) * 60d))
+                SegmentReady?.Invoke(supplemented);
+        }
         if (gap)
         {
             SetTimingIssue(wallClockChanged ? "wall-clock-adjusted" : "unobserved-interval");
@@ -514,6 +579,7 @@ public sealed class NativeTracker : IDisposable
 
     private AppIdentity ResolveForeground(IntPtr foreground)
     {
+        _foregroundPath = null; _foregroundAumid = null;
         if (foreground == IntPtr.Zero) return UnknownApp;
         NativeMethods.GetWindowThreadProcessId(foreground, out uint processId);
         if (processId == 0) return UnknownApp;
@@ -543,6 +609,8 @@ public sealed class NativeTracker : IDisposable
         }
 
         string? path = TryProcessPath(processId);
+        _foregroundPath = path;
+        _foregroundAumid = TryProcessAumid(processId);
         string processName;
         try
         {
@@ -632,6 +700,20 @@ public sealed class NativeTracker : IDisposable
         finally { NativeMethods.CloseHandle(process); }
     }
 
+    private static string? TryProcessAumid(uint processId)
+    {
+        IntPtr process = NativeMethods.OpenProcess(0x1000, false, processId);
+        if (process == IntPtr.Zero) return null;
+        try
+        {
+            uint count = 0;
+            if (NativeMethods.GetApplicationUserModelId(process, ref count, null) != 122 || count is 0 or > 1024) return null;
+            var value = new StringBuilder((int)count);
+            return NativeMethods.GetApplicationUserModelId(process, ref count, value) == 0 ? value.ToString() : null;
+        }
+        finally { NativeMethods.CloseHandle(process); }
+    }
+
     private void ThrowIfDisposed()
     {
         if (_disposed) throw new ObjectDisposedException(nameof(NativeTracker));
@@ -648,6 +730,8 @@ public sealed class NativeTracker : IDisposable
         {
             _started = false;
             _disposed = true;
+            _media?.Dispose();
+            _gamepad.Dispose();
             if (_powerNotification != IntPtr.Zero)
             {
                 NativeMethods.UnregisterPowerSettingNotification(_powerNotification);
@@ -667,6 +751,8 @@ public sealed class NativeTracker : IDisposable
 
 internal static class NativeMethods
 {
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    internal static extern int GetApplicationUserModelId(IntPtr process, ref uint count, StringBuilder? id);
     [StructLayout(LayoutKind.Sequential)]
     internal struct LastInputInfo { internal uint Size; internal uint Time; }
     [DllImport("user32.dll")]

@@ -38,7 +38,7 @@ public static class IdleTimeFilter
     private static UsageSegment Copy(UsageSegment source) => new()
     {
         Start = source.Start, End = source.End, Seconds = source.Seconds, Kind = source.Kind,
-        AppId = source.AppId, AppName = source.AppName, ActivityTracked = true
+        AppId = source.AppId, AppName = source.AppName, ActivityTracked = true, ActivityBasis = source.ActivityBasis
     };
 
     private static UsageSegment Part(UsageSegment source, double from, double to, bool idle, double duration) => new()
@@ -49,6 +49,7 @@ public static class IdleTimeFilter
         Kind = idle ? UsageRules.IdleAppKind : source.Kind,
         AppId = source.AppId,
         AppName = source.AppName,
-        ActivityTracked = true
+        ActivityTracked = true,
+        ActivityBasis = idle ? "idle" : source.ActivityBasis
     };
 }

@@ -20,6 +20,7 @@ public static class SettingsSelfTests
         }
 
         var fresh = AppSettings.Load(path);
+        Check(!fresh.MediaDetectionEnabled && !fresh.GamepadDetectionEnabled, "optional media and controller sampling are off by default");
         Check(fresh.AutoRecord && fresh.DarkMode, "new settings default to automatic recording and dark mode");
         Check(fresh.AutoStartWidget && fresh.IdleFilterEnabled, "new settings enable login widget display and idle filtering");
         Check(fresh.IdleTimeoutMinutes == 5 && fresh.IdleTimeoutOverrides.Count == 0,
@@ -32,6 +33,12 @@ public static class SettingsSelfTests
         const string oldJson = "{\"RecordingEnabled\":true,\"Paused\":true,\"CreatedVersion\":\"0.1.0\"}";
         File.WriteAllText(path, oldJson);
         var migrated = AppSettings.Load(path);
+        Check(!migrated.MediaDetectionEnabled && !migrated.GamepadDetectionEnabled, "legacy settings receive optional activity evidence defaults");
+        var evidenceSettings = new AppSettings { MediaDetectionEnabled = false, GamepadDetectionEnabled = true };
+        evidenceSettings.Save(path);
+        var evidenceReload = AppSettings.Load(path);
+        Check(!evidenceReload.MediaDetectionEnabled && evidenceReload.GamepadDetectionEnabled, "evidence preferences persist independently");
+        File.WriteAllText(path, oldJson);
         Check(migrated.AutoRecord && migrated.DarkMode, "old JSON missing new fields receives enabled defaults");
         Check(migrated.AutoStartWidget && migrated.IdleFilterEnabled, "legacy settings receive login-widget and idle-filter defaults");
         Check(migrated.IdleTimeoutMinutes == 5 && migrated.IdleTimeoutOverrides.Count == 0,

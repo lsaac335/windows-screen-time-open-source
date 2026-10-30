@@ -21,9 +21,11 @@ namespace ScreenTime
         private bool _showRawForeground;
         private bool _ready;
         private bool _rendering;
-        private bool _allowClose;
         private bool? _lastDarkMode;
         private string _page = "overview";
+        private int _appPage;
+        private string _lastAppSearch = "";
+        private const int AppsPerPage = 25;
         private DaySummary? _summary;
         private List<DaySummary> _week = new List<DaySummary>();
         private readonly Dictionary<StackPanel, Dictionary<string, AppRowView>> _rowCaches = new Dictionary<StackPanel, Dictionary<string, AppRowView>>();
@@ -63,7 +65,7 @@ namespace ScreenTime
             Render();
         }
 
-        public void PrepareForExit() => _allowClose = true;
+        public void PrepareForExit() { }
 
         public void ShowDashboard()
         {
@@ -74,9 +76,7 @@ namespace ScreenTime
 
         private void Window_Closing(object? sender, CancelEventArgs e)
         {
-            if (_allowClose) return;
-            e.Cancel = true;
-            Hide();
+            // Sampling owns its own HWND; closing this view can release the full visual tree.
         }
 
         private void Controller_Updated()
@@ -130,11 +130,13 @@ namespace ScreenTime
                 AutoRecordCheck.IsChecked = _controller.AutoRecord;
                 AutoStartWidgetCheck.IsChecked = _controller.AutoStartWidget;
                 IdleFilterCheck.IsChecked = _controller.IdleFilterEnabled;
+                MediaDetectionCheck.IsChecked = _controller.MediaDetectionEnabled;
+                GamepadDetectionCheck.IsChecked = _controller.GamepadDetectionEnabled;
                 IdleTimeoutSelector.SelectedValue = _controller.IdleTimeoutMinutes.ToString(CultureInfo.InvariantCulture);
                 IdleTimeoutSelector.IsEnabled = _controller.IdleFilterEnabled;
-                IdleRuleDescription.Text = "开启后，连续 " + _controller.IdleTimeoutMinutes + " 分钟无键盘或鼠标操作的后续区间不计入活跃时长；前台时长与亮屏时长仍继续累计。前 " + _controller.IdleTimeoutMinutes + " 分钟仍计入活跃。\n\n阅读、视频或手柄操作可能被判为空闲，可调整阈值、关闭过滤，或在应用详情里单独设置。修改只影响之后的记录，不重算历史。";
+                IdleRuleDescription.Text = "开启后，连续 " + _controller.IdleTimeoutMinutes + " 分钟无键鼠操作的后续区间会排除；前 " + _controller.IdleTimeoutMinutes + " 分钟仍计入活跃。前台时长与亮屏时长不受影响。\n\n下方可用媒体播放和手柄输入补充活动依据。阅读仍可能被判为空闲，可在应用详情单独调整规则。修改只影响之后的记录。";
                 ForegroundRuleText.Text = _controller.IdleFilterEnabled
-                    ? "活跃时长按操作估算：全局阈值为 " + _controller.IdleTimeoutMinutes + " 分钟；应用可单独设置。前台时长包含空闲，阅读和视频可能被判为空闲。"
+                    ? "活跃时长按键鼠操作" + (_controller.MediaDetectionEnabled ? "、媒体推测" : "") + (_controller.GamepadDetectionEnabled ? "、手柄输入" : "") + "估算；空闲阈值为 " + _controller.IdleTimeoutMinutes + " 分钟。前台时长包含空闲。"
                     : "空闲过滤已关闭：之后记录的活跃时长与前台时长相同，仍只统计获得焦点的应用。";
                 DarkModeCheck.IsChecked = _controller.DarkMode;
                 TopmostCheck.IsChecked = _controller.AlwaysOnTop;
@@ -166,6 +168,7 @@ namespace ScreenTime
                 }
                 else _summary = _controller.GetDay(_selectedDate);
                 var summary = _summary;
+                if (_page == "apps") { RenderAllApps(summary.Apps); return; }
                 ScreenValue.Text = summary.HasData ? FormatDuration(summary.ScreenSeconds) : "—";
                 ForegroundValue.Text = summary.HasData ? FormatDuration(summary.ForegroundSeconds) : "—";
                 RawForegroundValue.Text = summary.HasData ? FormatForegroundDuration(summary.RawForegroundSeconds, summary.HasLegacyActivity) : "—";
@@ -200,8 +203,7 @@ namespace ScreenTime
                         (summary.HasGaps ? " · 数据不完整，灰纹为未记录/部分记录，浅底为未来时间。" : " · 仅汇总实际观测到的区间。");
                 }
                 if (summary.HasLegacyActivity) CoverageText.Text += " " + LegacyActivityExplanation;
-                RenderTopApps(summary.Apps);
-                RenderAllApps(summary.Apps);
+                if (_page == "overview") RenderTopApps(summary.Apps);
             }
             catch (Exception ex)
             {
@@ -213,7 +215,7 @@ namespace ScreenTime
 
         private static DaySummary Combine(List<DaySummary> days)
         {
-            var apps = days.SelectMany(d => d.Apps).GroupBy(a => a.AppId, StringComparer.OrdinalIgnoreCase).Select(g => new AppUsage { AppId = g.Key, Name = g.Last().Name, Seconds = g.Sum(a => a.Seconds), ForegroundSeconds = g.Sum(a => a.ForegroundSeconds) }).OrderByDescending(a => a.Seconds).ToList();
+            var apps = days.SelectMany(d => d.Apps).GroupBy(a => a.AppId, StringComparer.OrdinalIgnoreCase).Select(g => new AppUsage { AppId = g.Key, Name = g.Last().Name, Seconds = g.Sum(a => a.Seconds), ForegroundSeconds = g.Sum(a => a.ForegroundSeconds), MediaSeconds = g.Sum(a => a.MediaSeconds), GamepadSeconds = g.Sum(a => a.GamepadSeconds) }).OrderByDescending(a => a.Seconds).ToList();
             double foreground = days.Sum(d => d.ForegroundSeconds);
             foreach (var app in apps) app.Share = foreground > 0 ? app.Seconds / foreground : 0;
             return new DaySummary
@@ -250,7 +252,14 @@ namespace ScreenTime
         private void RenderAllApps(List<AppUsage> apps)
         {
             string search = SearchBox.Text?.Trim() ?? "";
+            if (search != _lastAppSearch) { _appPage = 0; _lastAppSearch = search; }
             var filtered = apps.Where(a => a.Name.Contains(search, StringComparison.CurrentCultureIgnoreCase)).OrderByDescending(AppSeconds).ToList();
+            int pages = Math.Max(1, (filtered.Count + AppsPerPage - 1) / AppsPerPage);
+            _appPage = Math.Clamp(_appPage, 0, pages - 1);
+            AppPages.Visibility = pages > 1 ? Visibility.Visible : Visibility.Collapsed;
+            AppPageText.Text = (_appPage + 1) + " / " + pages;
+            PreviousAppPage.IsEnabled = _appPage > 0;
+            NextAppPage.IsEnabled = _appPage + 1 < pages;
             AppDurationHeading.Text = MetricName + "时长";
             AppCountText.Text = (search.Length > 0 ? "匹配 " + filtered.Count + " / " : "") + "共 " + apps.Count + " 个应用与系统条目 · 按" + MetricName + "时长排序";
             AppBarCaptionText.Text = RangeText() + " · " + MetricName + "时长 · " + (filtered.Count == 0 ? (search.Length > 0 ? "没有匹配的应用" : "暂无应用记录") : "显示前 " + Math.Min(AppUsageBarChart.MaximumRows, filtered.Count) + " 个");
@@ -259,8 +268,10 @@ namespace ScreenTime
             AppBarCoverageText.Text = "柱条从零起按时长比较，占比按所选范围全部应用计算，不含本软件。点击柱条查看详情。" +
                 (_summary?.HasGaps == true ? " 仅含实际已记录区间，未记录时段不代表零使用。" : "") +
                 (_showRawForeground && _summary?.HasLegacyActivity == true ? " 前台柱条为已知下限，占比也仅按已知时长计算。" : "");
-            UpdateAppList(AllAppsHost, filtered, true, search.Length > 0 ? "没有找到匹配的应用" : "这段时间还没有应用记录", search.Length > 0 ? "试试其他名称。" : "开启记录后，前台软件会自动出现在这里。");
+            UpdateAppList(AllAppsHost, filtered.Skip(_appPage * AppsPerPage).Take(AppsPerPage).ToList(), true, search.Length > 0 ? "没有找到匹配的应用" : "这段时间还没有应用记录", search.Length > 0 ? "试试其他名称。" : "开启记录后，前台软件会自动出现在这里。");
         }
+        private void PreviousApps_Click(object sender, RoutedEventArgs e) { _appPage = Math.Max(0, _appPage - 1); Render(); }
+        private void NextApps_Click(object sender, RoutedEventArgs e) { _appPage++; Render(); }
 
         private sealed class AppRowView
         {
@@ -441,6 +452,7 @@ namespace ScreenTime
                 panel.Children.Add(new TextBlock { Text = range, Foreground = Brush("#929AAF"), FontSize = 11, Margin = new Thickness(0, 9, 0, 12) });
                 panel.Children.Add(new TextBlock { Text = "活跃 " + FormatDuration(selectedApp.Seconds), FontSize = 21, Foreground = Brush("#5854E8"), FontWeight = FontWeights.SemiBold });
                 panel.Children.Add(new TextBlock { Text = "前台 " + FormatForegroundDuration(selectedApp.ForegroundSeconds, selected.HasLegacyActivity) + " · 包含空闲", FontSize = 13, Margin = new Thickness(0, 7, 0, 0) });
+                panel.Children.Add(new TextBlock { Text = "其中补充计时：媒体推测 " + FormatDuration(selectedApp.MediaSeconds) + " · 手柄输入 " + FormatDuration(selectedApp.GamepadSeconds) + "\n这些区间已包含在活跃时长中，不重复累加。媒体推测不能证明本人在场。", FontSize = 11, Foreground = Brush("#929AAF"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 9, 0, 0) });
                 if (selected.HasLegacyActivity) panel.Children.Add(new TextBlock { Text = LegacyActivityExplanation, FontSize = 10, Foreground = Brush("#929AAF"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) });
                 panel.Children.Add(new TextBlock { Text = "此应用的空闲规则", FontSize = 12, Margin = new Thickness(0, 20, 0, 8) });
                 var idleSelector = new ComboBox { Width = 225, Height = 32, HorizontalAlignment = HorizontalAlignment.Left, Style = (Style)FindResource("IdleRuleSelector") };
@@ -520,6 +532,8 @@ namespace ScreenTime
         private void AutoRecord_Changed(object sender, RoutedEventArgs e) { if (_ready && !_rendering) Safe(() => _controller.AutoRecord = AutoRecordCheck.IsChecked == true); }
         private void AutoStartWidget_Changed(object sender, RoutedEventArgs e) { if (_ready && !_rendering) Safe(() => _controller.AutoStartWidget = AutoStartWidgetCheck.IsChecked == true); }
         private void IdleFilter_Changed(object sender, RoutedEventArgs e) { if (_ready && !_rendering) Safe(() => _controller.IdleFilterEnabled = IdleFilterCheck.IsChecked == true); }
+        private void MediaDetection_Changed(object sender, RoutedEventArgs e) { if (_ready && !_rendering) Safe(() => _controller.MediaDetectionEnabled = MediaDetectionCheck.IsChecked == true); }
+        private void GamepadDetection_Changed(object sender, RoutedEventArgs e) { if (_ready && !_rendering) Safe(() => _controller.GamepadDetectionEnabled = GamepadDetectionCheck.IsChecked == true); }
         private void IdleTimeout_Changed(object sender, SelectionChangedEventArgs e)
         {
             if (_ready && !_rendering && int.TryParse(IdleTimeoutSelector.SelectedValue as string, out int minutes))
