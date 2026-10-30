@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net6.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../ScreenTime/Models.cs" Link="Models.cs" />
+    <Compile Include="../../ScreenTime/UsageStore.cs" Link="UsageStore.cs" />
+    <Compile Include="../../ScreenTime/CoreSelfTests.cs" Link="CoreSelfTests.cs" />
+    <Compile Include="../../ScreenTime/AppSettings.cs" Link="AppSettings.cs" />
+    <Compile Include="../../ScreenTime/SettingsSelfTests.cs" Link="SettingsSelfTests.cs" />
+    <Compile Include="../../ScreenTime/IdleTimeFilter.cs" Link="IdleTimeFilter.cs" />
+    <Compile Include="../../ScreenTime/IdleFilterSelfTests.cs" Link="IdleFilterSelfTests.cs" />
+    <Compile Include="../../ScreenTime/ForegroundEventClock.cs" Link="ForegroundEventClock.cs" />
+    <Compile Include="../../ScreenTime/NativeTimingSelfTests.cs" Link="NativeTimingSelfTests.cs" />
+    <Compile Include="../../ScreenTime/ActivityEvidence.cs" Link="ActivityEvidence.cs" />
+    <Compile Include="../../ScreenTime/ActivityEvidenceSelfTests.cs" Link="ActivityEvidenceSelfTests.cs" />
+  </ItemGroup>
+</Project>
