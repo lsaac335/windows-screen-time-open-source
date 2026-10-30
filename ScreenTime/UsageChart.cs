@@ -20,6 +20,8 @@ namespace ScreenTime
         private bool _hasData;
         private readonly Typeface _face = new Typeface("Microsoft YaHei UI");
         public bool ForegroundOnly { get; set; }
+        public string MetricLabel { get; set; } = "活跃";
+        public bool MetricIsLowerBound { get; set; }
         public UsageChart()
         {
             MouseMove += OnMove;
@@ -138,7 +140,9 @@ namespace ScreenTime
             if (IsFuture(index)) { ToolTip = heading + "\n尚未到来的时间"; return; }
             if (HasCoverage && Observed(index) <= .01) { ToolTip = heading + "\n未记录 · 不能视为零使用"; return; }
             string coverage = !HasCoverage ? "" : HasMissing(index) ? "\n部分记录 · 已观测 " + MainWindow.FormatDuration(Observed(index)) + "\n未记录区间不代表没有使用" : "\n已观测 " + MainWindow.FormatDuration(Observed(index));
-            ToolTip = heading + (ForegroundOnly ? "\n前台  " + MainWindow.FormatDuration(f) : "\n亮屏  " + MainWindow.FormatDuration(s) + "\n前台  " + MainWindow.FormatDuration(f)) + coverage;
+            string metric = "\n" + MetricLabel + "  " + (MetricIsLowerBound ? "≥ " : "") + MainWindow.FormatDuration(f);
+            ToolTip = heading + (ForegroundOnly ? metric : "\n亮屏  " + MainWindow.FormatDuration(s) + metric) + coverage +
+                (MetricIsLowerBound ? "\n包含旧记录，此值为已知下限。" : "");
         }
     }
 }

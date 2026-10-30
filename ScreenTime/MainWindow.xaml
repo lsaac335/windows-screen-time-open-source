@@ -8,7 +8,33 @@
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="32" ResizeBorderThickness="6" CornerRadius="8" GlassFrameThickness="0" UseAeroCaptionButtons="False"/>
     </shell:WindowChrome.WindowChrome>
-    <Window.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries><ResourceDictionary Source="Theme.xaml"/><ResourceDictionary Source="Caption.xaml"/></ResourceDictionary.MergedDictionaries></ResourceDictionary></Window.Resources>
+    <Window.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries><ResourceDictionary Source="Theme.xaml"/><ResourceDictionary Source="Caption.xaml"/></ResourceDictionary.MergedDictionaries>
+        <Style x:Key="IdleRuleSelector" TargetType="ComboBox">
+            <Setter Property="Foreground" Value="{DynamicResource Ink}"/><Setter Property="Background" Value="{DynamicResource InputBackground}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource Line}"/><Setter Property="FontSize" Value="12"/>
+            <Setter Property="ItemContainerStyle"><Setter.Value><Style TargetType="ComboBoxItem">
+                <Setter Property="Foreground" Value="{DynamicResource Ink}"/><Setter Property="Padding" Value="10,7"/>
+                <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ComboBoxItem">
+                    <Border x:Name="ItemBorder" Background="Transparent" Padding="{TemplateBinding Padding}"><ContentPresenter/></Border>
+                    <ControlTemplate.Triggers><Trigger Property="IsHighlighted" Value="True"><Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource AccentSoft}"/></Trigger><Trigger Property="IsSelected" Value="True"><Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource AccentSoft}"/></Trigger></ControlTemplate.Triggers>
+                </ControlTemplate></Setter.Value></Setter>
+            </Style></Setter.Value></Setter>
+            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ComboBox">
+                <Grid>
+                    <ToggleButton x:Name="DropDownToggle" Focusable="False" ClickMode="Press" IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                        <ToggleButton.Template><ControlTemplate TargetType="ToggleButton"><Border Background="{Binding Background, RelativeSource={RelativeSource AncestorType=ComboBox}}" BorderBrush="{Binding BorderBrush, RelativeSource={RelativeSource AncestorType=ComboBox}}" BorderThickness="1" CornerRadius="6"><Path Data="M0,0 L4,4 L8,0" Stroke="{DynamicResource Muted}" StrokeThickness="1.2" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,10,0"/></Border></ControlTemplate></ToggleButton.Template>
+                    </ToggleButton>
+                    <ContentPresenter Content="{TemplateBinding SelectionBoxItem}" ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}" Margin="10,0,28,0" VerticalAlignment="Center" IsHitTestVisible="False"/>
+                    <Popup x:Name="PART_Popup" IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom" AllowsTransparency="True" Focusable="False">
+                        <Border Background="{DynamicResource CardBackground}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="6" Padding="3" MinWidth="{TemplateBinding ActualWidth}">
+                            <ScrollViewer MaxHeight="260" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained"/></ScrollViewer>
+                        </Border>
+                    </Popup>
+                </Grid>
+                <ControlTemplate.Triggers><Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.5"/></Trigger><Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter Property="BorderBrush" Value="{DynamicResource Accent}"/></Trigger></ControlTemplate.Triggers>
+            </ControlTemplate></Setter.Value></Setter>
+        </Style>
+    </ResourceDictionary></Window.Resources>
     <Grid x:Name="WindowFrame">
     <Grid.RowDefinitions><RowDefinition Height="32"/><RowDefinition Height="*"/></Grid.RowDefinitions>
     <Border Background="{DynamicResource WindowBackground}">
@@ -68,7 +94,7 @@
                         <TextBlock Text="只属于你的记录" Foreground="#D7DDF0" FontSize="11"/>
                         <TextBlock Text="本地保存 · 无需登录" Foreground="{DynamicResource SidebarMuted}" FontSize="10" Margin="0,7,0,0"/>
                         <Border Height="1" Background="{DynamicResource Line}" Margin="0,14,0,11"/>
-                        <TextBlock Text="Windows  ·  版本 0.2.1" Foreground="{DynamicResource SidebarMuted}" FontSize="10"/>
+                        <TextBlock Text="Windows  ·  版本 0.3.0" Foreground="{DynamicResource SidebarMuted}" FontSize="10"/>
                     </StackPanel>
                 </Border>
             </Grid>
@@ -113,30 +139,39 @@
                     </WrapPanel>
                     <Button Grid.Column="1" Content="↗  导出 CSV" Style="{StaticResource RoundButton}" VerticalAlignment="Top" Click="Export_Click"/>
                 </Grid>
+                <Grid x:Name="MetricToolbar" Margin="0,0,0,18">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="图表与排行" FontSize="11" Foreground="{DynamicResource Muted}" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                        <Button x:Name="ActiveMetricButton" Content="活跃时长" Style="{StaticResource RoundButton}" Click="ActiveMetric_Click" Margin="0,0,7,0"/>
+                        <Button x:Name="ForegroundMetricButton" Content="前台时长" Style="{StaticResource RoundButton}" Click="ForegroundMetric_Click"/>
+                    </StackPanel>
+                    <TextBlock Grid.Column="1" x:Name="MetricHintText" FontSize="10" Foreground="{DynamicResource Secondary}" VerticalAlignment="Center" TextWrapping="Wrap" Margin="16,0,0,0"/>
+                </Grid>
                 <StackPanel x:Name="OverviewPanel">
                     <Grid Margin="0,0,0,18">
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="14"/><ColumnDefinition Width="*"/><ColumnDefinition Width="14"/><ColumnDefinition Width="0.86*"/></Grid.ColumnDefinitions>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="14"/><ColumnDefinition Width="*"/><ColumnDefinition Width="14"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                         <Border Style="{StaticResource Card}"><StackPanel>
                             <TextBlock Text="亮屏时长" Foreground="{DynamicResource Muted}" FontSize="12" ToolTip="Windows 报告显示状态为开启或变暗的累计时间，包含锁屏亮屏，多屏不叠加。"/>
-                            <TextBlock x:Name="ScreenValue" Text="—" FontSize="29" FontWeight="SemiBold" Margin="0,13,0,9"/>
-                            <TextBlock Text="屏幕亮着的时间" Foreground="{DynamicResource Secondary}" FontSize="10"/>
+                            <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left" Height="35" Margin="0,13,0,9"><TextBlock x:Name="ScreenValue" Text="—" FontSize="26" FontWeight="SemiBold"/></Viewbox>
+                            <TextBlock x:Name="LockedValue" Foreground="{DynamicResource Secondary}" FontSize="10"/>
                         </StackPanel></Border>
                         <Border Grid.Column="2" Style="{StaticResource Card}" Background="{DynamicResource AccentFill}" BorderThickness="0"><StackPanel>
-                            <TextBlock Text="前台使用时长" Foreground="{DynamicResource AccentText}" FontSize="12" ToolTip="解锁且亮屏时，处于前台焦点的应用时间，不含屏幕时间自身。开启空闲过滤时，连续 5 分钟无键鼠操作后的区间不计入应用时间。"/>
-                            <TextBlock x:Name="ForegroundValue" Text="—" Foreground="White" FontSize="29" FontWeight="SemiBold" Margin="0,13,0,9"/>
-                            <TextBlock Text="应用时间合计 · 不含本软件" Foreground="{DynamicResource AccentText}" FontSize="10"/>
+                            <TextBlock Text="活跃时长" Foreground="{DynamicResource OnAccent}" FontSize="12" ToolTip="从前台时长中扣除超过空闲阈值的部分。活跃状态由操作时间推测，不代表持续专注。"/>
+                            <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left" Height="35" Margin="0,13,0,9"><TextBlock x:Name="ForegroundValue" Text="—" Foreground="White" FontSize="26" FontWeight="SemiBold"/></Viewbox>
+                            <TextBlock Text="按记录时的空闲规则估算" Foreground="{DynamicResource OnAccent}" Opacity="0.85" FontSize="10"/>
                         </StackPanel></Border>
                         <Border Grid.Column="4" Style="{StaticResource Card}"><StackPanel>
-                            <TextBlock Text="锁屏亮屏" Foreground="{DynamicResource Muted}" FontSize="12"/>
-                            <TextBlock x:Name="LockedValue" Text="—" FontSize="29" FontWeight="SemiBold" Margin="0,13,0,9"/>
-                            <TextBlock Text="计入亮屏，不计入应用" Foreground="{DynamicResource Secondary}" FontSize="10"/>
+                            <TextBlock Text="前台时长" Foreground="{DynamicResource Muted}" FontSize="12" ToolTip="解锁且亮屏时，应用获得前台焦点的时间，包括无操作期间；不含本软件。"/>
+                            <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left" Height="35" Margin="0,13,0,9"><TextBlock x:Name="RawForegroundValue" Text="—" FontSize="25" FontWeight="SemiBold"/></Viewbox>
+                            <TextBlock x:Name="RawForegroundCaption" Text="包括空闲 · 不含本软件" Foreground="{DynamicResource Secondary}" FontSize="10"/>
                         </StackPanel></Border>
                     </Grid>
                     <Border Style="{StaticResource Card}" Margin="0,0,0,18">
                         <StackPanel>
                             <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                <StackPanel><TextBlock x:Name="ChartTitle" Text="一天中的使用分布" FontSize="14" FontWeight="SemiBold"/><TextBlock x:Name="ChartCaption" Text="按小时查看亮屏与前台使用" FontSize="10" Foreground="{DynamicResource Muted}" Margin="0,5,0,0"/></StackPanel>
-                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top"><Border Width="7" Height="7" CornerRadius="2" Background="{DynamicResource ChartScreen}" Margin="0,4,5,0" VerticalAlignment="Top"/><TextBlock Text="亮屏" FontSize="10" Foreground="{DynamicResource Muted}" Margin="0,0,15,0"/><Border Width="7" Height="7" CornerRadius="2" Background="{DynamicResource Accent}" Margin="0,4,5,0" VerticalAlignment="Top"/><TextBlock Text="前台" FontSize="10" Foreground="{DynamicResource Muted}" Margin="0,0,15,0"/><TextBlock Text="▧  未记录" FontSize="10" Foreground="{DynamicResource Secondary}"/></StackPanel>
+                                <StackPanel><TextBlock x:Name="ChartTitle" Text="一天中的使用分布" FontSize="14" FontWeight="SemiBold"/><TextBlock x:Name="ChartCaption" Text="按小时查看亮屏与活跃时长" FontSize="10" Foreground="{DynamicResource Muted}" Margin="0,5,0,0"/></StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top"><Border Width="7" Height="7" CornerRadius="2" Background="{DynamicResource ChartScreen}" Margin="0,4,5,0" VerticalAlignment="Top"/><TextBlock Text="亮屏" FontSize="10" Foreground="{DynamicResource Muted}" Margin="0,0,15,0"/><Border Width="7" Height="7" CornerRadius="2" Background="{DynamicResource Accent}" Margin="0,4,5,0" VerticalAlignment="Top"/><TextBlock x:Name="ChartMetricLegend" Text="活跃" FontSize="10" Foreground="{DynamicResource Muted}" Margin="0,0,15,0"/><TextBlock Text="▧  未记录" FontSize="10" Foreground="{DynamicResource Secondary}"/></StackPanel>
                             </Grid>
                             <local:UsageChart x:Name="MainChart" Height="168" Margin="0,17,0,0"/>
                             <TextBlock x:Name="CoverageText" FontSize="10" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,12,0,0"/>
@@ -170,7 +205,7 @@
                         <Grid Margin="0,0,0,18">
                             <StackPanel><TextBlock Text="全部应用" FontSize="16" FontWeight="SemiBold"/><TextBlock x:Name="AppCountText" FontSize="11" Foreground="{DynamicResource Muted}" Margin="0,6,0,0"/></StackPanel>
                         </Grid>
-                        <Grid Margin="0,0,0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="110"/><ColumnDefinition Width="60"/></Grid.ColumnDefinitions><TextBlock Text="应用 · 点击查看详情" Foreground="{DynamicResource Secondary}" FontSize="10"/><TextBlock Grid.Column="1" Text="前台使用时长" Foreground="{DynamicResource Secondary}" FontSize="10" HorizontalAlignment="Right"/><TextBlock Grid.Column="2" Text="占比" Foreground="{DynamicResource Secondary}" FontSize="10" HorizontalAlignment="Right"/></Grid>
+                        <Grid Margin="0,0,0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="110"/><ColumnDefinition Width="60"/></Grid.ColumnDefinitions><TextBlock Text="应用 · 点击查看详情" Foreground="{DynamicResource Secondary}" FontSize="10"/><TextBlock Grid.Column="1" x:Name="AppDurationHeading" Text="活跃时长" Foreground="{DynamicResource Secondary}" FontSize="10" HorizontalAlignment="Right"/><TextBlock Grid.Column="2" Text="占比" Foreground="{DynamicResource Secondary}" FontSize="10" HorizontalAlignment="Right"/></Grid>
                         <StackPanel x:Name="AllAppsHost"/>
                     </StackPanel></Border>
                 </StackPanel>
@@ -179,7 +214,7 @@
                         <TextBlock Text="关于屏幕时间" FontSize="15" FontWeight="SemiBold"/>
                         <TextBlock Text="屏幕时间是一款本地运行的 Windows 使用时间统计工具。它记录屏幕亮起的时间和各应用的前台使用时长，帮助你了解时间花在哪里。" Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap" LineHeight="21" Margin="0,16,0,0"/>
                         <TextBlock Text="支持日期与近七天统计、应用柱状图、桌面小组件、空闲过滤和 CSV 导出。数据保存在本机，不读取窗口标题、网页地址或按键内容。" Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap" LineHeight="21" Margin="0,10,0,0"/>
-                        <TextBlock Text="版本 0.2.1 · 开源许可：MIT" Foreground="{DynamicResource Secondary}" FontSize="10" Margin="0,12,0,0"/>
+                        <TextBlock Text="版本 0.3.0 · 开源许可：MIT" Foreground="{DynamicResource Secondary}" FontSize="10" Margin="0,12,0,0"/>
                     </StackPanel></Border>
                     <Border Style="{StaticResource Card}" Margin="0,0,0,16"><StackPanel>
                         <TextBlock Text="常驻与启动" FontSize="15" FontWeight="SemiBold"/>
@@ -196,8 +231,15 @@
                     </StackPanel></Border>
                     <Border Style="{StaticResource Card}" Margin="0,0,0,16"><StackPanel>
                         <TextBlock Text="应用计时" FontSize="15" FontWeight="SemiBold"/>
-                        <CheckBox x:Name="IdleFilterCheck" Content="空闲 5 分钟后暂停应用计时" FontSize="12" Margin="0,20,0,10" Checked="IdleFilter_Changed" Unchecked="IdleFilter_Changed"/>
-                        <TextBlock Text="开启后，连续 5 分钟无键盘或鼠标操作，仅累计亮屏时间；恢复操作后自动继续。前 5 分钟仍计入应用时间。&#10;&#10;阅读、看视频或只用手柄时也可能触发空闲，可临时关闭。切换立即生效，只影响之后的记录，不重算历史。" Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap" LineHeight="21"/>
+                        <CheckBox x:Name="IdleFilterCheck" Content="从活跃时长中排除空闲" FontSize="12" Margin="0,20,0,10" Checked="IdleFilter_Changed" Unchecked="IdleFilter_Changed"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,2,0,12">
+                            <TextBlock Text="连续无操作" FontSize="11" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                            <ComboBox x:Name="IdleTimeoutSelector" Style="{StaticResource IdleRuleSelector}" Width="110" Height="30" SelectedValuePath="Tag" SelectionChanged="IdleTimeout_Changed" AutomationProperties.Name="空闲时间阈值">
+                                <ComboBoxItem Content="1 分钟" Tag="1"/><ComboBoxItem Content="3 分钟" Tag="3"/><ComboBoxItem Content="5 分钟" Tag="5"/><ComboBoxItem Content="10 分钟" Tag="10"/><ComboBoxItem Content="15 分钟" Tag="15"/><ComboBoxItem Content="30 分钟" Tag="30"/>
+                            </ComboBox>
+                            <TextBlock Text="后视为空闲" FontSize="11" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                        </StackPanel>
+                        <TextBlock x:Name="IdleRuleDescription" Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap" LineHeight="21"/>
                     </StackPanel></Border>
                     <Border Style="{StaticResource Card}" Margin="0,0,0,16"><StackPanel>
                         <TextBlock Text="本地数据" FontSize="15" FontWeight="SemiBold"/>
@@ -211,9 +253,9 @@
                     </StackPanel></Border>
                     <Border Style="{StaticResource Card}"><StackPanel>
                         <TextBlock Text="这些数字意味着什么" FontSize="15" FontWeight="SemiBold"/>
-                        <TextBlock Text="亮屏时长：Windows 报告显示处于开启或变暗的时间，包含锁屏亮屏，多屏不叠加。&#10;&#10;前台使用时长：解锁且亮屏时，有前台焦点的应用时间，不含屏幕时间自身。开启空闲过滤后还会排除连续 5 分钟无操作之后的区间。查看本软件时只累计亮屏，不计应用时间。后台音乐、下载和并排但未获焦点的窗口不重复累计。&#10;&#10;未记录：暂停、程序未运行或状态未知的区间，不能解释为零使用。首次启用前的历史无法追溯。&#10;&#10;外接显示器的物理电源状态可能与系统报告存在差异；首版统计的是本地会话显示状态。" FontSize="11" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" LineHeight="21" Margin="0,18,0,0"/>
+                        <TextBlock Text="亮屏时长：Windows 报告显示处于开启或变暗的时间，包含锁屏亮屏，多屏不叠加。&#10;&#10;前台时长：解锁且亮屏时，应用获得前台焦点的时间，包含空闲；查看本软件时只累计亮屏。后台音乐、下载和并排但未获焦点的窗口不重复累计。&#10;&#10;活跃时长：按记录时的空闲设置，从前台时长中扣除超过阈值的无操作区间。它是估计值，阅读、视频和手柄操作可能被判为空闲。&#10;&#10;旧版本记录未保留空闲时的应用归属。包含旧记录时，前台时长显示“≥”，表示至少已有这么长，不能精确补算。&#10;&#10;未记录：暂停、程序未运行或状态未知的区间，不能解释为零使用。首次启用前的历史无法追溯。外接显示器的物理电源状态可能与系统报告存在差异。" FontSize="11" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" LineHeight="21" Margin="0,18,0,0"/>
                         <Border Height="1" Background="{DynamicResource Line}" Margin="0,22,0,15"/>
-                        <TextBlock Text="屏幕时间 0.2.1 · 本地优先的 Windows 使用记录" Foreground="{DynamicResource Secondary}" FontSize="10"/>
+                        <TextBlock Text="屏幕时间 0.3.0 · 本地优先的 Windows 使用记录" Foreground="{DynamicResource Secondary}" FontSize="10"/>
                         <Button Content="退出程序" Style="{StaticResource RoundButton}" HorizontalAlignment="Left" Margin="0,15,0,0" Click="Exit_Click" ToolTip="停止记录并退出（Ctrl+Q）"/>
                     </StackPanel></Border>
                 </StackPanel>

@@ -43,14 +43,19 @@ public sealed class AppUsageBarChart : UserControl
         Content = panel;
     }
 
-    public void SetApps(IReadOnlyList<AppUsage> apps, string emptyMessage)
+    public void SetApps(IReadOnlyList<AppUsage> apps, string emptyMessage, bool showForeground = false,
+        bool foregroundIsLowerBound = false, double? totalSeconds = null)
     {
-        var shown = apps.OrderByDescending(a => a.Seconds).ThenBy(a => a.Name, StringComparer.CurrentCulture)
+        double Seconds(AppUsage app) => showForeground ? app.ForegroundSeconds : app.Seconds;
+        string metric = showForeground ? "前台" : "活跃";
+        bool lowerBound = showForeground && foregroundIsLowerBound;
+        double total = totalSeconds ?? apps.Sum(Seconds);
+        var shown = apps.OrderByDescending(Seconds).ThenBy(a => a.Name, StringComparer.CurrentCulture)
             .Take(MaximumRows).ToList();
         _axis.Visibility = shown.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
         _empty.Visibility = shown.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         _empty.Text = emptyMessage;
-        double maximum = ScaleMaximum(shown.Select(a => a.Seconds).DefaultIfEmpty(0).Max());
+        double maximum = ScaleMaximum(shown.Select(Seconds).DefaultIfEmpty(0).Max());
         _middleTick.Text = AxisDuration(maximum / 2);
         _maximumTick.Text = AxisDuration(maximum);
 
@@ -64,16 +69,21 @@ public sealed class AppUsageBarChart : UserControl
             string name = string.IsNullOrWhiteSpace(app.Name) ? "未识别应用" : app.Name;
             row.Button.Tag = app;
             row.Name.Text = (index + 1).ToString(CultureInfo.InvariantCulture) + "  " + name;
-            row.Value.Text = MainWindow.FormatDuration(app.Seconds) + " · " + app.Share.ToString("P0", CultureInfo.CurrentCulture);
-            double fraction = Math.Clamp(app.Seconds / maximum, 0, 1);
+            double seconds = Seconds(app);
+            double share = total > 0 ? Math.Clamp(seconds / total, 0, 1) : 0;
+            string duration = lowerBound ? MainWindow.FormatForegroundDuration(seconds, true) : MainWindow.FormatDuration(seconds);
+            row.Value.Text = duration + " · " + share.ToString("P0", CultureInfo.CurrentCulture);
+            double fraction = Math.Clamp(seconds / maximum, 0, 1);
             row.FillColumn.Width = new GridLength(fraction, GridUnitType.Star);
             row.RemainderColumn.Width = new GridLength(1 - fraction, GridUnitType.Star);
-            string description = name + "\n前台使用 " + MainWindow.FormatDuration(app.Seconds) +
-                "\n占所选范围应用时间 " + app.Share.ToString("P1", CultureInfo.CurrentCulture) + "\n点击查看详情";
+            string description = name + "\n活跃 " + MainWindow.FormatDuration(app.Seconds) +
+                "\n前台 " + MainWindow.FormatForegroundDuration(app.ForegroundSeconds, foregroundIsLowerBound) +
+                "\n占所选范围应用" + metric + "时长 " + share.ToString("P1", CultureInfo.CurrentCulture) + "\n点击查看详情" +
+                (foregroundIsLowerBound ? "\n" + MainWindow.LegacyActivityExplanation : "");
             row.Button.ToolTip = description;
             row.Name.ToolTip = name;
-            AutomationProperties.SetName(row.Button, name + "，" + MainWindow.FormatDuration(app.Seconds) +
-                "，占比 " + app.Share.ToString("P1", CultureInfo.CurrentCulture));
+            AutomationProperties.SetName(row.Button, name + "，" + metric + "时长 " + duration +
+                "，占比 " + share.ToString("P1", CultureInfo.CurrentCulture) + (lowerBound ? "，按已知下限计算" : ""));
             desired.Add(row.Button);
         }
         // Keep existing buttons while only durations change, so a refresh cannot steal keyboard focus.

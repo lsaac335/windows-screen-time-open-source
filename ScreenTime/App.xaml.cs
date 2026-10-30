@@ -28,10 +28,17 @@ public partial class App : Application
     {
         base.OnStartup(e);
         _quietWidgetStart = e.Args.Contains("--tray");
+        if (e.Args.Contains("--sampler-self-test"))
+        {
+            var output = Arg(e.Args, "--test-output") ?? Path.Combine(AppContext.BaseDirectory, "sampler-test.txt");
+            try { File.WriteAllText(output, TrackingServiceSelfTests.Run()); Shutdown(0); }
+            catch (Exception ex) { File.WriteAllText(output, ex.ToString()); Shutdown(1); }
+            return;
+        }
         if (e.Args.Contains("--self-test"))
         {
             var output = Arg(e.Args, "--test-output") ?? Path.Combine(AppContext.BaseDirectory, "self-test.txt");
-            try { File.WriteAllText(output, CoreSelfTests.Run() + Environment.NewLine + SettingsSelfTests.Run() + Environment.NewLine + IdleFilterSelfTests.Run()); Shutdown(0); }
+            try { File.WriteAllText(output, CoreSelfTests.Run() + Environment.NewLine + SettingsSelfTests.Run() + Environment.NewLine + IdleFilterSelfTests.Run() + Environment.NewLine + NativeTimingSelfTests.Run()); Shutdown(0); }
             catch (Exception ex) { File.WriteAllText(output, ex.ToString()); Shutdown(1); }
             return;
         }

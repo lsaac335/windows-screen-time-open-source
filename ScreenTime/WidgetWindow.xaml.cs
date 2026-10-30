@@ -136,13 +136,19 @@ public partial class WidgetWindow : Window
             WidgetScreen.Text = day.HasData ? ShortDuration(day.ScreenSeconds) : "—";
             WidgetForeground.Text = day.HasData ? ShortDuration(day.ForegroundSeconds) : "—";
             WidgetScreen.ToolTip = "今日亮屏：" + MainWindow.FormatDuration(day.ScreenSeconds);
-            WidgetForeground.ToolTip = "应用前台使用：" + MainWindow.FormatDuration(day.ForegroundSeconds) + "，不含本软件。";
+            WidgetForeground.ToolTip = "活跃时长：" + MainWindow.FormatDuration(day.ForegroundSeconds) + "，按记录时的空闲规则估算，不含本软件。";
+            WidgetRawForeground.Text = day.HasData ? "前台 " + (day.HasLegacyActivity ? "≥ " : "") + ShortDuration(day.RawForegroundSeconds) : "前台 —";
+            WidgetRawForeground.ToolTip = "前台时长：" + MainWindow.FormatForegroundDuration(day.RawForegroundSeconds, day.HasLegacyActivity) + "，包含空闲，不含本软件。" +
+                (day.HasLegacyActivity ? "\n" + MainWindow.LegacyActivityExplanation : "");
+            AutomationProperties.SetName(WidgetRawForeground, WidgetRawForeground.ToolTip.ToString());
+            WidgetChart.MetricLabel = "活跃";
+            WidgetChart.MetricIsLowerBound = false;
             WidgetChart.SetData(day.ScreenHourly, day.ForegroundHourly, Enumerable.Range(0, 24).Select(h => h.ToString("00")).ToArray(), day.HasData, "开始后显示实际记录");
             var now = TimeZoneInfo.ConvertTimeBySystemTimeZoneId(DateTimeOffset.Now, _controller.TimeZoneId).DateTime;
             WidgetChart.SetCoverage(day.ObservedHourly, day.UnknownHourly,
                 Enumerable.Range(0, 24).Select(h => h > now.Hour).ToArray(),
                 Enumerable.Range(0, 24).Select(h => Math.Clamp(now.TimeOfDay.TotalSeconds - h * 3600, 0, 3600)).ToArray());
-            UpdateAppRows(day.Apps.Take(2).ToList());
+            UpdateAppRows(day.Apps.OrderByDescending(a => a.Seconds).Take(2).ToList(), day.HasLegacyActivity);
             bool paused = _controller.IsPaused;
             bool warning = _controller.HasError;
             WidgetStatus.Text = !_controller.IsRecordingEnabled ? "等待开始" : warning ? "采集异常" : paused ? "已暂停" : _controller.StatusText;
@@ -183,7 +189,7 @@ public partial class WidgetWindow : Window
         }
     }
 
-    private void UpdateAppRows(List<AppUsage> apps)
+    private void UpdateAppRows(List<AppUsage> apps, bool hasLegacyActivity)
     {
         WidgetEmpty.Visibility = apps.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         while (_appRows.Count < apps.Count)
@@ -197,6 +203,8 @@ public partial class WidgetWindow : Window
             var app = apps[i];
             row.Name.Text = app.Name; row.Name.Foreground = ThemeManager.GetBrush("Ink"); row.Name.ToolTip = app.Name;
             row.Duration.Text = ShortDuration(app.Seconds); row.Duration.Foreground = ThemeManager.GetBrush("Muted");
+            row.Root.ToolTip = app.Name + "\n活跃 " + MainWindow.FormatDuration(app.Seconds) + "\n前台 " + MainWindow.FormatForegroundDuration(app.ForegroundSeconds, hasLegacyActivity) +
+                (hasLegacyActivity ? "\n" + MainWindow.LegacyActivityExplanation : "");
             var source = _controller.GetAppIcon(app.AppId);
             if (row.AppId != app.AppId || row.Source != source || source == null)
             {

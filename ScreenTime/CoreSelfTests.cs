@@ -80,8 +80,8 @@ public static class CoreSelfTests
         string csvPath = Path.Combine(root, "export.csv");
         store.ExportCsv(csvPath, today, today.AddDays(1));
         string csv = File.ReadAllText(csvPath);
-        Check(csv.Contains("'  =HYPERLINK") && csv.Contains(",30,2"), "CSV formula safety and invariant numeric seconds");
-        Check(csv.Contains("\"coverage\",\"无有效记录\",,2"), "unobserved day is not a false zero");
+        Check(csv.Contains("'  =HYPERLINK") && csv.Contains(",30,3"), "CSV formula safety and invariant numeric seconds");
+        Check(csv.Contains("\"coverage\",\"无有效记录\",,3"), "unobserved day is not a false zero");
         store.Save();
         var reloaded = new UsageStore(store.DataDirectory);
         Check(Near(reloaded.GetDay(today).ForegroundSeconds, store.GetDay(today).ForegroundSeconds), "save and reload");
@@ -152,8 +152,10 @@ public static class CoreSelfTests
         var legacyBefore = legacySeed.GetDay(legacyDate);
         legacySeed.Save();
         string legacyPath = Path.Combine(legacyDirectory, legacyDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + ".json");
-        File.WriteAllText(legacyPath, File.ReadAllText(legacyPath).Replace(legacySelfId, UsageRules.SelfAppId));
+        File.WriteAllText(legacyPath, File.ReadAllText(legacyPath).Replace(legacySelfId, UsageRules.SelfAppId).Replace("\"Version\":2", "\"Version\":1"));
+        string legacyOriginal = File.ReadAllText(legacyPath);
         var legacyMigratedStore = new UsageStore(legacyDirectory);
+        Check(File.ReadAllText(legacyPath + ".pre-v2") == legacyOriginal, "schema upgrade keeps an exact original backup before writing v2");
         var legacyAfter = legacyMigratedStore.GetDay(legacyDate);
         Check(Near(legacyAfter.ForegroundSeconds, 30) && legacyAfter.Apps.Count == 1 &&
               legacyAfter.Apps[0].AppId == "legacy-editor" && Near(legacyAfter.Apps[0].Share, 1), "legacy detail migration removes only self foreground and recomputes shares");
@@ -173,13 +175,14 @@ public static class CoreSelfTests
                   !migratedDetailText.Contains(UsageRules.SelfAppId) && !migratedDetailText.Contains(legacySelfName), "legacy detail conversion is persisted without self attribution");
         }
         var legacyReload = new UsageStore(legacyDirectory);
+        Check(File.ReadAllText(legacyPath + ".pre-v2") == legacyOriginal, "reloading v2 never replaces the original migration backup");
         Check(Near(legacyReload.GetDay(legacyDate).ForegroundSeconds, 30) && File.ReadAllText(legacyPath) == migratedDetailText,
             "legacy detail migration is idempotent on repeated load");
         string migratedCsvPath = Path.Combine(root, "self-exclusion.csv");
         legacyReload.ExportCsv(migratedCsvPath, legacyDate, legacyDate);
         string migratedCsv = File.ReadAllText(migratedCsvPath);
-        Check(!migratedCsv.Contains(legacySelfName) && migratedCsv.Contains("\"foreground\",\"前台使用时长\",30,2") &&
-              migratedCsv.Contains("\"screen\",\"亮屏时长\",140,2"), "CSV exports corrected foreground with retained screen total and rule version 2");
+        Check(!migratedCsv.Contains(legacySelfName) && migratedCsv.Contains("\"active\",\"活跃时长（扣除空闲）\",30,3") &&
+              migratedCsv.Contains("\"screen\",\"亮屏时长\",140,3"), "CSV exports corrected activity with retained screen total and rule version 3");
 
         // Archived summaries have no raw intervals left; migration must not fabricate any.
         string archiveDirectory = Path.Combine(root, "legacy-self-archive");
@@ -219,6 +222,89 @@ public static class CoreSelfTests
         var twiceMigratedArchive = new UsageStore(archiveDirectory);
         Check(Near(twiceMigratedArchive.GetDay(archiveDate).ForegroundSeconds, 360) && File.ReadAllText(archivePath) == migratedArchiveText,
             "archived self migration does not subtract twice");
+        Check(migratedArchive.HasLegacyActivity && Near(migratedArchive.RawForegroundSeconds, 360) &&
+              Near(migratedArchive.Apps.Single().ForegroundSeconds, 360), "legacy summary foreground is an explicit lower bound after self exclusion");
+        Check(legacyAfter.HasLegacyActivity && Near(legacyAfter.RawForegroundSeconds, 30) &&
+              Near(legacyAfter.AppForegroundHourly["legacy-editor"].Sum(), 30), "legacy detail foreground is reconstructed only from retained app intervals");
+        using (var migratedJson = JsonDocument.Parse(migratedArchiveText))
+            Check(migratedJson.RootElement.GetProperty("Version").GetInt32() == 2, "legacy archived summary is saved in schema version 2");
+
+        // New recordings retain both ownership and filtered activity, including zero-activity apps.
+        var dual = new UsageStore(Path.Combine(root, "dual-metrics"));
+        DateTime dualDate = today.AddDays(-6);
+        DateTimeOffset dualStart = At(dualDate.AddHours(23).AddMinutes(59).AddSeconds(30));
+        void DualAdd(string kind, string id, double offset, double seconds, bool tracked = true) => dual.Add(new UsageSegment
+        {
+            Start = dualStart.AddSeconds(offset), End = dualStart.AddSeconds(offset + seconds), Seconds = seconds,
+            Kind = kind, AppId = id, AppName = id, ActivityTracked = tracked
+        });
+        DualAdd("app", "reader", 0, 30);
+        DualAdd(UsageRules.IdleAppKind, "reader", 30, 60);
+        var dualFirst = dual.GetDay(dualDate);
+        var dualSecond = dual.GetDay(dualDate.AddDays(1));
+        Check(Near(dualFirst.ForegroundSeconds, 30) && Near(dualFirst.RawForegroundSeconds, 30) &&
+              Near(dualSecond.ForegroundSeconds, 0) && Near(dualSecond.RawForegroundSeconds, 60), "active and idle ownership split correctly across midnight");
+        Check(Near(dualFirst.RawForegroundHourly[23], 30) && Near(dualSecond.RawForegroundHourly[0], 60) &&
+              Near(dualSecond.AppForegroundHourly["reader"][0], 60) && Near(dualSecond.AppHourly["reader"].Sum(), 0), "dual hourly totals preserve midnight boundaries");
+        Check(dualSecond.Apps.Count == 1 && Near(dualSecond.Apps[0].ForegroundSeconds, 60) && Near(dualSecond.Apps[0].Seconds, 0) &&
+              !dualSecond.HasLegacyActivity && Near(dualSecond.ScreenSeconds, 60) && Near(dualSecond.ObservedSeconds, 60), "idle-only foreground app is retained without fabricating activity");
+        DualAdd("app", "reader", 90, 60);
+        DualAdd("locked", "", 150, 20);
+        DualAdd(UsageRules.IdleAppKind, UsageRules.SelfAppId, 170, 15);
+        DualAdd("app", UsageRules.SelfAppId, 185, 15);
+        DualAdd("app", "overlap", 30, 120);
+        var dualUpdated = dual.GetDay(dualDate.AddDays(1));
+        Check(Near(dualUpdated.ForegroundSeconds, 60) && Near(dualUpdated.RawForegroundSeconds, 120) &&
+              Near(dualUpdated.ScreenSeconds, 170) && Near(dualUpdated.LockedSeconds, 20) && dualUpdated.Apps.Count == 1,
+            "dual metrics conserve screen time and exclude both active and idle self intervals and overlap");
+        Check(Near(dualUpdated.Apps.Sum(a => a.ForegroundSeconds), dualUpdated.RawForegroundSeconds) &&
+              Near(dualUpdated.Apps.Sum(a => a.Seconds), dualUpdated.ForegroundSeconds) &&
+              Near(dualUpdated.RawForegroundHourly.Sum(), dualUpdated.RawForegroundSeconds), "per-app and hourly foreground sum to the daily foreground total");
+        dualUpdated.RawForegroundHourly[0] = -1;
+        dualUpdated.AppForegroundHourly["reader"][0] = -1;
+        dualUpdated.Apps[0].ForegroundSeconds = -1;
+        var dualDetached = dual.GetDay(dualDate.AddDays(1));
+        Check(Near(dualDetached.RawForegroundHourly[0], 120) && Near(dualDetached.AppForegroundHourly["reader"][0], 120) &&
+              Near(dualDetached.Apps[0].ForegroundSeconds, 120), "raw foreground values and nested maps are detached from store state");
+        dual.Save();
+        string dualPath = Path.Combine(dual.DataDirectory, dualDate.AddDays(1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + ".json");
+        string dualSaved = File.ReadAllText(dualPath);
+        var dualReload = new UsageStore(dual.DataDirectory);
+        var dualLoaded = dualReload.GetDay(dualDate.AddDays(1));
+        Check(Near(dualLoaded.RawForegroundSeconds, 120) && Near(dualLoaded.ForegroundSeconds, 60) && !dualLoaded.HasLegacyActivity &&
+              File.ReadAllText(dualPath) == dualSaved, "version 2 persistence retains complete dual metrics without repeated migration");
+
+        // A mixed date must retain old activity, while never guessing which app owned old idle time.
+        DateTime mixedDate = today.AddDays(-7);
+        DateTimeOffset mixedStart = At(mixedDate.AddHours(10));
+        void MixedAdd(string kind, double offset, bool tracked) => dual.Add(new UsageSegment
+        {
+            Start = mixedStart.AddSeconds(offset), End = mixedStart.AddSeconds(offset + 60), Seconds = 60,
+            Kind = kind, AppId = "mixed-reader", AppName = "混合记录", ActivityTracked = tracked
+        });
+        MixedAdd("app", 0, false);
+        MixedAdd(UsageRules.ScreenOnlyKind, 60, false);
+        MixedAdd("app", 120, true);
+        MixedAdd(UsageRules.IdleAppKind, 180, true);
+        var mixed = dual.GetDay(mixedDate);
+        Check(mixed.HasLegacyActivity && Near(mixed.ForegroundSeconds, 120) && Near(mixed.RawForegroundSeconds, 180) &&
+              Near(mixed.ScreenSeconds, 240), "mixed old and new data retains only the known raw foreground lower bound");
+        string dualCsvPath = Path.Combine(root, "dual-metrics.csv");
+        dual.ExportCsv(dualCsvPath, mixedDate, dualDate.AddDays(1));
+        string dualCsv = File.ReadAllText(dualCsvPath);
+        Check(dualCsv.Contains("ForegroundIsLowerBound") && dualCsv.Contains("\"foreground\",\"前台时长（旧记录仅为下限）\",180,3,true") &&
+              dualCsv.Contains("\"app_active\",\"reader\",60,3,false") && dualCsv.Contains("\"app_foreground\",\"reader\",120,3,false"),
+            "CSV explicitly distinguishes active, foreground and legacy lower-bound values");
+        DateTime rawArchiveDate = today.AddDays(-91);
+        dual.Add(new UsageSegment { Start = At(rawArchiveDate.AddHours(8)), End = At(rawArchiveDate.AddHours(8).AddMinutes(1)),
+            Seconds = 60, Kind = UsageRules.IdleAppKind, AppId = "archived-idle", AppName = "归档空闲", ActivityTracked = true });
+        dual.Prune();
+        var dualArchive = new UsageStore(dual.DataDirectory).GetDay(rawArchiveDate);
+        Check(Near(dualArchive.RawForegroundSeconds, 60) && Near(dualArchive.ForegroundSeconds, 0) && !dualArchive.HasLegacyActivity &&
+              !dualArchive.HasHourlyDetails && dualArchive.AppForegroundHourly.Count == 0 && Near(dualArchive.RawForegroundHourly.Sum(), 0),
+            "new archived summaries retain independent raw totals without keeping expired hourly detail");
+        dual.DeleteAll();
+        Check(!new UsageStore(dual.DataDirectory).GetDay(dualDate.AddDays(1)).HasData, "deletion removes dual metrics and idle ownership after reload");
 
         string orphanAllDirectory = Path.Combine(root, "orphan-delete-all");
         _ = new UsageStore(orphanAllDirectory);
@@ -241,6 +327,14 @@ public static class CoreSelfTests
         File.WriteAllText(runtimePath, "runtime metadata");
         orphanRange.DeleteRange(today, today);
         Check(!File.Exists(inRangePath) && File.Exists(outOfRangePath) && File.Exists(invalidNamePath) && File.Exists(runtimePath), "temporary range deletion touches only valid in-range daily files");
+        string inRangeBackup = inRangePath.Replace(".json.tmp", ".json.pre-v2");
+        string outsideBackup = outOfRangePath.Replace(".json.tmp", ".json.pre-v2");
+        File.WriteAllText(inRangeBackup, "original private data");
+        File.WriteAllText(outsideBackup, "other date private data");
+        orphanRange.DeleteRange(today, today);
+        Check(!File.Exists(inRangeBackup) && File.Exists(outsideBackup), "range deletion includes only matching migration backups");
+        orphanRange.DeleteAll();
+        Check(!File.Exists(outsideBackup), "delete all also clears orphan migration backups");
 
         string orphanPruneDirectory = Path.Combine(root, "orphan-prune");
         var orphanPrune = new UsageStore(orphanPruneDirectory);
@@ -252,6 +346,33 @@ public static class CoreSelfTests
         File.WriteAllText(longExpiredTemporary, "long-expired private detail");
         orphanPrune.Prune();
         Check(File.Exists(recentTemporary) && !File.Exists(expiredTemporary) && !File.Exists(longExpiredTemporary) && File.Exists(Path.Combine(orphanPruneDirectory, "store-meta.json")), "orphan detail expiry honors the 90-day boundary without deleting metadata");
+        string recentBackup = recentTemporary.Replace(".json.tmp", ".json.pre-v2");
+        string expiredBackup = expiredTemporary.Replace(".json.tmp", ".json.pre-v2");
+        File.WriteAllText(recentBackup, "recent original detail");
+        File.WriteAllText(expiredBackup, "expired original detail");
+        orphanPrune.Prune();
+        Check(File.Exists(recentBackup) && !File.Exists(expiredBackup), "migration backups expire with the raw-detail retention boundary");
+
+        string blockedBackupDirectory = Path.Combine(root, "backup-failure");
+        _ = new UsageStore(blockedBackupDirectory);
+        string blockedOriginal = Path.Combine(blockedBackupDirectory, Path.GetFileName(legacyPath));
+        File.WriteAllText(blockedOriginal, legacyOriginal);
+        Directory.CreateDirectory(blockedOriginal + ".pre-v2");
+        bool migrationBlocked = false;
+        try { _ = new UsageStore(blockedBackupDirectory); } catch (IOException) { migrationBlocked = true; }
+        Check(migrationBlocked && File.ReadAllText(blockedOriginal) == legacyOriginal, "backup failure stops migration without changing the original");
+
+        string inconsistentDirectory = Path.Combine(root, "inconsistent-metrics");
+        _ = new UsageStore(inconsistentDirectory);
+        var inconsistentSummary = new DaySummary { Date = today.ToString("yyyy-MM-dd"), HasData = true,
+            HasHourlyDetails = false, ScreenSeconds = 1, ObservedSeconds = 1, RawForegroundSeconds = 5, ForegroundSeconds = 5,
+            Apps = new() { new AppUsage { AppId = "test", Name = "test", Seconds = 5, ForegroundSeconds = 5 } } };
+        string inconsistentPath = Path.Combine(inconsistentDirectory, inconsistentSummary.Date + ".json");
+        string inconsistentText = JsonSerializer.Serialize(new { Version = 2, Date = inconsistentSummary.Date, Segments = (UsageSegment[]?)null, Summary = inconsistentSummary });
+        File.WriteAllText(inconsistentPath, inconsistentText);
+        bool invalidTotals = false;
+        try { _ = new UsageStore(inconsistentDirectory); } catch (InvalidDataException) { invalidTotals = true; }
+        Check(invalidTotals && File.ReadAllText(inconsistentPath) == inconsistentText, "impossible v2 totals are rejected without rewriting evidence");
 
         string corrupted = Path.Combine(root, "corrupt");
         _ = new UsageStore(corrupted);
@@ -266,6 +387,6 @@ public static class CoreSelfTests
         if (!resolved.StartsWith(temporary, StringComparison.OrdinalIgnoreCase) || !Path.GetFileName(resolved).StartsWith("ScreenTime-CoreTests-", StringComparison.Ordinal))
             throw new InvalidOperationException("Unexpected self-test cleanup path.");
         Directory.Delete(resolved, true);
-        return "Core self-tests passed: " + checks + " assertions (aggregation, midnight, unknown intervals, CSV, self exclusion and migration, persistence, deletion, retention, corrupt-file safety).";
+        return "Core self-tests passed: " + checks + " assertions (dual metrics, aggregation, midnight, CSV, legacy migration, self exclusion, persistence, deletion, retention, corrupt-file safety).";
     }
 }

@@ -14,7 +14,7 @@ public sealed class AppController : IAppController, IDisposable
     private readonly AppSettings _settings;
     private readonly string _settingsPath;
     private readonly DispatcherTimer _timer;
-    private NativeTracker? _tracker;
+    private TrackingService? _tracker;
     private IntPtr _handle;
     private string? _error;
     private int _ticks;
@@ -56,6 +56,40 @@ public sealed class AppController : IAppController, IDisposable
             catch { _settings.IdleFilterEnabled = previous; _tracker?.SetIdleFilter(previous); throw; }
             Updated?.Invoke();
         }
+    }
+    public int IdleTimeoutMinutes
+    {
+        get => _settings.IdleTimeoutMinutes;
+        set
+        {
+            if (!AppSettings.IsValidIdleTimeout(value)) throw new ArgumentOutOfRangeException(nameof(value));
+            if (_settings.IdleTimeoutMinutes == value) return;
+            int previous = _settings.IdleTimeoutMinutes;
+            _tracker?.SetIdleTimeoutMinutes(value);
+            _settings.IdleTimeoutMinutes = value;
+            try { _settings.Save(_settingsPath); }
+            catch { _settings.IdleTimeoutMinutes = previous; _tracker?.SetIdleTimeoutMinutes(previous); throw; }
+            Updated?.Invoke();
+        }
+    }
+    public int? GetAppIdleTimeoutMinutes(string appId) =>
+        _settings.IdleTimeoutOverrides.TryGetValue(appId, out int minutes) ? minutes : null;
+    public void SetAppIdleTimeoutMinutes(string appId, int? minutes)
+    {
+        if (string.IsNullOrWhiteSpace(appId)) throw new ArgumentException("应用标识不能为空。", nameof(appId));
+        if (minutes.HasValue && !AppSettings.IsValidIdleTimeout(minutes.Value, true)) throw new ArgumentOutOfRangeException(nameof(minutes));
+        int? previous = GetAppIdleTimeoutMinutes(appId);
+        if (minutes == previous) return;
+        _tracker?.SetAppIdleTimeoutMinutes(appId, minutes);
+        void Assign(int? value)
+        {
+            if (value.HasValue) _settings.IdleTimeoutOverrides[appId] = value.Value;
+            else _settings.IdleTimeoutOverrides.Remove(appId);
+        }
+        Assign(minutes);
+        try { _settings.Save(_settingsPath); }
+        catch { Assign(previous); _tracker?.SetAppIdleTimeoutMinutes(appId, previous); throw; }
+        Updated?.Invoke();
     }
     public bool AutoRecord
     {
@@ -169,11 +203,8 @@ public sealed class AppController : IAppController, IDisposable
     private void EnsureTracker()
     {
         if (_tracker != null || _handle == IntPtr.Zero) return;
-        _tracker = new NativeTracker(_handle, _settings.IdleFilterEnabled);
-        _tracker.Faulted += ex => { _error = ex.Message; Updated?.Invoke(); };
-        _tracker.SegmentReady += segment => _store.Add(segment);
-        _tracker.StateChanged += () => Updated?.Invoke();
-        _tracker.Start(_settings.Paused);
+        _tracker = new TrackingService(_settings.IdleFilterEnabled, _settings.IdleTimeoutMinutes,
+            _settings.IdleTimeoutOverrides, _settings.Paused);
     }
 
     public void StartRecording()
@@ -198,6 +229,7 @@ public sealed class AppController : IAppController, IDisposable
         try
         {
             _tracker?.SetPaused(!previous);
+            _tracker?.DrainSegments(_store.Add);
             _settings.Paused = !previous;
             _settings.Save(_settingsPath);
             _store.Save();
@@ -211,11 +243,12 @@ public sealed class AppController : IAppController, IDisposable
     {
         try
         {
-            _tracker?.Tick();
+            _tracker?.DrainSegments(_store.Add);
             _ticks++;
             if (_ticks % 10 == 0)
             {
                 _tracker?.Flush();
+                _tracker?.DrainSegments(_store.Add);
                 _store.Save();
                 if (_ticks % 3600 == 0) _store.Prune();
                 WriteRuntimeStatus();
@@ -231,10 +264,13 @@ public sealed class AppController : IAppController, IDisposable
         var widget = System.Windows.Application.Current?.Windows.OfType<WidgetWindow>().FirstOrDefault();
         var snapshot = new
         {
-            Version = "0.2.1", ProcessId = Environment.ProcessId,
+            Version = "0.3.0", ProcessId = Environment.ProcessId,
             Runtime = Environment.Version.ToString(), UpdatedAt = DateTimeOffset.Now,
             RecordingEnabled = IsRecordingEnabled, Paused = IsPaused,
-            AutoRecord = AutoRecord, AutoStartWidget, IdleFilterEnabled,
+            AutoRecord = AutoRecord, AutoStartWidget, IdleFilterEnabled, IdleTimeoutMinutes,
+            AppIdleRuleCount = _settings.IdleTimeoutOverrides.Count,
+            SamplerThreadId = _tracker?.SamplerThreadId, SamplerTicks = _tracker?.SampleCount,
+            SamplerPendingSegments = _tracker?.PendingSegments,
             InputIdleSeconds = _tracker?.InputIdleSeconds, IsIdle = _tracker?.IsIdle,
             DarkMode = DarkMode, AlwaysOnTop = AlwaysOnTop,
             WidgetEnabled, WidgetPinned, WidgetLocked, WidgetLeft, WidgetTop,
@@ -259,7 +295,7 @@ public sealed class AppController : IAppController, IDisposable
 
     public void Refresh()
     {
-        try { _tracker?.Flush(); _store.Save(); _error = null; }
+        try { FlushRequired(); _error = null; }
         catch (Exception ex) { _error = ex.Message; }
         Updated?.Invoke();
     }
@@ -324,7 +360,7 @@ public sealed class AppController : IAppController, IDisposable
         FlushRequired();
         _store.ExportCsv(path, from, to);
     }
-    private void FlushRequired() { _tracker?.Flush(); _store.Save(); }
+    private void FlushRequired() { _tracker?.Flush(); _tracker?.DrainSegments(_store.Add); _store.Save(); }
     public void DeleteRange(DateTime start, DateTime end)
     {
         FlushRequired();
@@ -363,7 +399,7 @@ public sealed class AppController : IAppController, IDisposable
         Exception? failure = null;
         try { _tracker?.Dispose(); }
         catch (Exception ex) { failure = ex; }
-        try { _store.Save(); _settings.Save(_settingsPath); }
+        try { _tracker?.DrainSegments(_store.Add); _store.Save(); _settings.Save(_settingsPath); }
         catch (Exception ex) { failure ??= ex; }
         if (failure != null)
         {

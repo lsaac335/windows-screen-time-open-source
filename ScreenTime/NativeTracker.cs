@@ -12,7 +12,7 @@ using System.Windows.Interop;
 namespace ScreenTime;
 
 /// <summary>
-/// Collects metadata only, on the WPF dispatcher thread. No titles, input hooks,
+/// Collects metadata only, on its owning dispatcher thread. No titles, input hooks,
 /// screenshots or network traffic are used. The owner calls Tick once a second.
 /// </summary>
 public sealed class NativeTracker : IDisposable
@@ -23,6 +23,10 @@ public sealed class NativeTracker : IDisposable
     private readonly NativeMethods.WinEventDelegate _foregroundCallback;
     private readonly Dictionary<string, AppIdentity> _identities = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _applicationPaths = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _idleOverrides = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ForegroundEventClock _eventClock = new(Stopwatch.Frequency);
+    private readonly Queue<(IntPtr Window, uint Time)> _foregroundEvents = new();
+    private bool _handlingForeground;
     private IntPtr _powerNotification;
     private IntPtr _foregroundHook;
     private bool _sessionNotifications;
@@ -42,8 +46,18 @@ public sealed class NativeTracker : IDisposable
     private DateTimeOffset _wall;
     private Snapshot _snapshot = new("unknown", "", "");
     private bool _idleFilterEnabled;
+    private int _idleTimeoutMinutes;
+    private int _lateEventCount;
+    private string? _timingIssue;
+    private long _timingIssueStamp;
+    public int IdleTimeoutMinutes => _idleTimeoutMinutes;
+    public int EffectiveIdleTimeoutMinutes => _idleOverrides.TryGetValue(_snapshot.Id, out int minutes) ? minutes : _idleTimeoutMinutes;
+    public double? LastForegroundEventDelayMilliseconds { get; private set; }
+    public bool TimingDegraded => _timingIssue != null;
+    public string TimingDiagnostic => _timingIssue ?? "event-time";
+    private bool FilterCurrentApp => _idleFilterEnabled && EffectiveIdleTimeoutMinutes > 0;
     public double? InputIdleSeconds { get; private set; }
-    public bool IsIdle => _idleFilterEnabled && InputIdleSeconds >= IdleTimeFilter.TimeoutSeconds && _snapshot.Kind == "app";
+    public bool IsIdle => FilterCurrentApp && InputIdleSeconds >= EffectiveIdleTimeoutMinutes * 60d && _snapshot.Kind == "app";
 
     public event Action<UsageSegment>? SegmentReady;
     public event Action? StateChanged;
@@ -78,8 +92,10 @@ public sealed class NativeTracker : IDisposable
                 return _powerNotification == IntPtr.Zero ? "显示状态监听异常" : "等待显示状态";
             if (_displayState == 0) return "屏幕已关闭";
             if (_locked) return "记录中 · 已锁屏";
-            if (_idleFilterEnabled && !InputIdleSeconds.HasValue) return "空闲检测异常 · 按前台计时";
-            if (IsIdle) return "空闲中 · 仅记录亮屏";
+            if (FilterCurrentApp && !InputIdleSeconds.HasValue) return "空闲检测异常 · 按前台计时";
+            if (_foregroundHook == IntPtr.Zero) return "切换监听异常 · 定时校验中";
+            if (TimingDegraded) return "计时校正中 · 部分区间未记录";
+            if (IsIdle) return "空闲中 · 活跃计时已暂停";
             return "正在记录";
         }
     }
@@ -90,7 +106,10 @@ public sealed class NativeTracker : IDisposable
         $"sessionNotify={_sessionNotifications}; sessionKnown={_sessionKnown}; " +
         $"lockKnown={_lockKnown}; locked={_locked}; localActive={_localActive}; " +
         $"remote={_remote}; foregroundHook={(_foregroundHook != IntPtr.Zero)}; callbackFault={(_callbackError != null)}; " +
-        $"idleFilter={_idleFilterEnabled}; inputIdleSeconds={InputIdleSeconds?.ToString("F1") ?? "unknown"}";
+        $"idleFilter={_idleFilterEnabled}; idleTimeoutMinutes={EffectiveIdleTimeoutMinutes}; " +
+        $"inputIdleSeconds={InputIdleSeconds?.ToString("F1") ?? "unknown"}; " +
+        $"foregroundDelayMs={LastForegroundEventDelayMilliseconds?.ToString("F1") ?? "unknown"}; " +
+        $"lateEvents={_lateEventCount}; timing={TimingDiagnostic}";
 
     /// <summary>For local icon extraction only. Paths are never added to usage segments or files.</summary>
     public string? GetApplicationPath(string appId)
@@ -100,11 +119,21 @@ public sealed class NativeTracker : IDisposable
         return _applicationPaths.TryGetValue(appId, out string? path) ? path : null;
     }
 
-    public NativeTracker(IntPtr hwnd, bool idleFilterEnabled = true)
+    public NativeTracker(IntPtr hwnd, bool idleFilterEnabled = true, int idleTimeoutMinutes = 5,
+        IReadOnlyDictionary<string, int>? idleOverrides = null)
     {
         if (hwnd == IntPtr.Zero) throw new ArgumentException("需要有效窗口句柄。", nameof(hwnd));
         _hwnd = hwnd;
         _idleFilterEnabled = idleFilterEnabled;
+        ValidateTimeout(idleTimeoutMinutes, false);
+        _idleTimeoutMinutes = idleTimeoutMinutes;
+        if (idleOverrides != null)
+            foreach (var rule in idleOverrides)
+            {
+                if (string.IsNullOrWhiteSpace(rule.Key)) throw new ArgumentException("应用标识不能为空。", nameof(idleOverrides));
+                ValidateTimeout(rule.Value, true);
+                _idleOverrides[rule.Key] = rule.Value;
+            }
         _source = HwndSource.FromHwnd(hwnd) ?? throw new InvalidOperationException("无法连接窗口消息。 ");
         _sessionId = Process.GetCurrentProcess().SessionId;
         _foregroundCallback = ForegroundChanged;
@@ -120,6 +149,7 @@ public sealed class NativeTracker : IDisposable
         InputIdleSeconds = ReadInputIdleSeconds();
         _wall = DateTimeOffset.Now;
         _stamp = Stopwatch.GetTimestamp();
+        _eventClock.Reset(Environment.TickCount64, _stamp);
         RefreshSession();
         _sessionNotifications = NativeMethods.WTSRegisterSessionNotification(_hwnd, 0);
         RegisterDisplayNotification();
@@ -129,7 +159,7 @@ public sealed class NativeTracker : IDisposable
         StateChanged?.Invoke();
     }
 
-    /// <summary>Must be called on the same UI thread as the constructor.</summary>
+    /// <summary>Must be called on the same sampling thread as the constructor.</summary>
     public void Tick()
     {
         if (!_started || _disposed) return;
@@ -137,6 +167,8 @@ public sealed class NativeTracker : IDisposable
         RefreshSession();
         Capture();
         _callbackError = null;
+        if (_timingIssue != null && (Stopwatch.GetTimestamp() - _timingIssueStamp) / (double)Stopwatch.Frequency >= 5)
+            _timingIssue = null;
     }
 
     public void SetPaused(bool paused)
@@ -157,6 +189,33 @@ public sealed class NativeTracker : IDisposable
         if (_started) Commit();
         _idleFilterEnabled = enabled;
         StateChanged?.Invoke();
+    }
+
+    public void SetIdleTimeoutMinutes(int minutes)
+    {
+        ThrowIfDisposed();
+        ValidateTimeout(minutes, false);
+        if (_idleTimeoutMinutes == minutes) return;
+        if (_started) Commit();
+        _idleTimeoutMinutes = minutes;
+        StateChanged?.Invoke();
+    }
+
+    public void SetAppIdleTimeoutMinutes(string appId, int? minutes)
+    {
+        ThrowIfDisposed();
+        if (string.IsNullOrWhiteSpace(appId)) throw new ArgumentException("应用标识不能为空。", nameof(appId));
+        if (minutes.HasValue) ValidateTimeout(minutes.Value, true);
+        if (_started) Commit();
+        if (minutes.HasValue) _idleOverrides[appId] = minutes.Value;
+        else _idleOverrides.Remove(appId);
+        StateChanged?.Invoke();
+    }
+
+    private static void ValidateTimeout(int minutes, bool allowNever)
+    {
+        if (minutes is not (1 or 3 or 5 or 10 or 15 or 30) && !(allowNever && minutes == 0))
+            throw new ArgumentOutOfRangeException(nameof(minutes), "空闲阈值必须为 1、3、5、10、15 或 30 分钟。");
     }
 
     private static double? ReadInputIdleSeconds()
@@ -255,7 +314,7 @@ public sealed class NativeTracker : IDisposable
         }
     }
 
-    private void Capture()
+    private void Capture(IntPtr? eventWindow = null)
     {
         Snapshot previous = _snapshot;
         if (IsPaused) _snapshot = new("paused", "", "");
@@ -266,7 +325,7 @@ public sealed class NativeTracker : IDisposable
         else if (_locked) _snapshot = new("locked", "", "");
         else
         {
-            AppIdentity app = ResolveForeground();
+            AppIdentity app = ResolveForeground(eventWindow ?? NativeMethods.GetForegroundWindow());
             // Viewing this dashboard is still observed screen-on time, without app attribution.
             _snapshot = app.Id == UsageRules.SelfAppId
                 ? new(UsageRules.ScreenOnlyKind, "", "")
@@ -277,21 +336,28 @@ public sealed class NativeTracker : IDisposable
 
     private void Commit(bool forceGap = false)
     {
+        long nowStamp = Stopwatch.GetTimestamp();
+        var now = DateTimeOffset.Now;
+        CommitAt(nowStamp, now, ReadInputIdleSeconds(), forceGap);
+    }
+
+    private void CommitAt(long endStamp, DateTimeOffset observedEnd, double? endIdleSeconds, bool forceGap = false)
+    {
+        // All producers share this cursor. A stale notification can never revise a stored interval.
+        if (endStamp < _stamp) return;
         bool wasIdle = IsIdle;
         double? previousIdleSeconds = InputIdleSeconds;
-        InputIdleSeconds = ReadInputIdleSeconds();
-        if (wasIdle != IsIdle) StateChanged?.Invoke();
-        long nowStamp = Stopwatch.GetTimestamp();
-        double elapsed = (nowStamp - _stamp) / (double)Stopwatch.Frequency;
+        InputIdleSeconds = endIdleSeconds;
+        double elapsed = (endStamp - _stamp) / (double)Stopwatch.Frequency;
         DateTimeOffset start = _wall;
-        DateTimeOffset now = DateTimeOffset.Now;
         DateTimeOffset end = start.AddTicks((long)Math.Round(elapsed * TimeSpan.TicksPerSecond));
-        bool wallClockChanged = Math.Abs((now - end).TotalSeconds) > 2;
-        _stamp = nowStamp;
+        bool wallClockChanged = Math.Abs((observedEnd - end).TotalSeconds) > 2;
+        _stamp = endStamp;
         // Keep exact contiguous boundaries under normal operation so thousands
         // of one-second ticks compact into one interval. Only re-anchor after
         // a real wall-clock jump; elapsed time itself always comes from QPC.
-        _wall = wallClockChanged ? now : end;
+        _wall = wallClockChanged ? observedEnd : end;
+        if (wasIdle != IsIdle) StateChanged?.Invoke();
         if (elapsed <= 0.0001) return;
 
         // Dispatcher stalls / sleep / debugging are not evidence that the last
@@ -304,23 +370,80 @@ public sealed class NativeTracker : IDisposable
             Seconds = elapsed,
             Kind = gap ? "gap" : _snapshot.Kind,
             AppId = gap ? "" : _snapshot.Id,
-            AppName = gap ? "" : _snapshot.Name
+            AppName = gap ? "" : _snapshot.Name,
+            ActivityTracked = true
         };
-        foreach (var part in IdleTimeFilter.Split(segment, _idleFilterEnabled, previousIdleSeconds, InputIdleSeconds))
+        foreach (var part in IdleTimeFilter.Split(segment, FilterCurrentApp, previousIdleSeconds,
+                     InputIdleSeconds, Math.Max(1, EffectiveIdleTimeoutMinutes) * 60d))
             SegmentReady?.Invoke(part);
+        if (gap)
+        {
+            SetTimingIssue(wallClockChanged ? "wall-clock-adjusted" : "unobserved-interval");
+            // Sleep and debugger stops can change the relation between the two clocks.
+            long currentStamp = Stopwatch.GetTimestamp();
+            _eventClock.Reset(Environment.TickCount64, currentStamp);
+        }
     }
 
     private void ForegroundChanged(IntPtr hook, uint eventType, IntPtr hwnd,
         int objectId, int childId, uint eventThread, uint eventTime)
     {
         if (!_started || _disposed || IsPaused || _suspended) return;
-        // OUTOFCONTEXT callbacks are delivered on the installing UI thread.
+        // OUTOFCONTEXT callbacks are delivered on the installing sampling thread.
+        // APIs called while resolving an identity may reenter this hook; preserve delivery order.
+        _foregroundEvents.Enqueue((hwnd, eventTime));
+        if (_handlingForeground) return;
+        _handlingForeground = true;
         try
         {
-            Commit();
-            Capture();
+            while (_foregroundEvents.Count > 0)
+            {
+                var item = _foregroundEvents.Dequeue();
+                HandleForegroundEvent(item.Window, item.Time);
+            }
         }
-        catch (Exception ex) { ReportNativeFault(ex); }
+        catch (Exception ex) { _foregroundEvents.Clear(); ReportNativeFault(ex); }
+        finally { _handlingForeground = false; }
+    }
+
+    private void HandleForegroundEvent(IntPtr window, uint eventTime)
+    {
+        long nowStamp = Stopwatch.GetTimestamp();
+        long nowTick = Environment.TickCount64;
+        DateTimeOffset nowWall = DateTimeOffset.Now;
+        double? observedIdle = ReadInputIdleSeconds();
+        bool mapped = _eventClock.TryMap(eventTime, nowTick, nowStamp, _stamp,
+            out long boundary, out double delay, out string reason);
+        LastForegroundEventDelayMilliseconds = delay;
+        if (!mapped || window == IntPtr.Zero)
+        {
+            _lateEventCount++;
+            // The missing transition cannot be reassigned after persistence. Mark only the
+            // uncommitted suffix unknown, then resume from the presently observable window.
+            CommitAt(nowStamp, nowWall, observedIdle, forceGap: true);
+            Capture();
+            SetTimingIssue(mapped ? "missing-event-window" : reason);
+            return;
+        }
+
+        double prefixSeconds = (boundary - _stamp) / (double)Stopwatch.Frequency;
+        double delaySeconds = (nowStamp - boundary) / (double)Stopwatch.Frequency;
+        bool idleKnown = ForegroundEventClock.TryProjectIdle(InputIdleSeconds, observedIdle,
+            prefixSeconds, delaySeconds, FilterCurrentApp ? EffectiveIdleTimeoutMinutes * 60d : 0,
+            out double? boundaryIdle);
+        bool uncertainActivity = FilterCurrentApp && _snapshot.Kind == "app" && !idleKnown;
+        CommitAt(boundary, nowWall.AddSeconds(-delaySeconds), boundaryIdle, uncertainActivity);
+        // Use the HWND supplied with this event. Reading GetForegroundWindow here would
+        // collapse queued A -> B -> C transitions into C and lose the time spent in B.
+        Capture(window);
+        if (uncertainActivity) SetTimingIssue("delayed-input-boundary");
+    }
+
+    private void SetTimingIssue(string reason)
+    {
+        _timingIssue = reason;
+        _timingIssueStamp = Stopwatch.GetTimestamp();
+        StateChanged?.Invoke();
     }
 
     private IntPtr WindowMessage(IntPtr hwnd, int message, IntPtr wParam,
@@ -389,9 +512,8 @@ public sealed class NativeTracker : IDisposable
         try { StateChanged?.Invoke(); } catch { }
     }
 
-    private AppIdentity ResolveForeground()
+    private AppIdentity ResolveForeground(IntPtr foreground)
     {
-        IntPtr foreground = NativeMethods.GetForegroundWindow();
         if (foreground == IntPtr.Zero) return UnknownApp;
         NativeMethods.GetWindowThreadProcessId(foreground, out uint processId);
         if (processId == 0) return UnknownApp;

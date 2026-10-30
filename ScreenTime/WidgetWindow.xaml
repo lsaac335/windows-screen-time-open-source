@@ -53,7 +53,7 @@
         <Border.Effect><DropShadowEffect Color="#000000" BlurRadius="14" ShadowDepth="2" Opacity="0.19"/></Border.Effect>
         <Grid>
             <Grid.RowDefinitions>
-                <RowDefinition Height="27"/><RowDefinition Height="67"/><RowDefinition Height="72"/>
+                <RowDefinition Height="27"/><RowDefinition Height="81"/><RowDefinition Height="72"/>
                 <RowDefinition Height="*"/><RowDefinition Height="27"/>
             </Grid.RowDefinitions>
             <Grid ToolTip="拖动移动 · 双击打开完整面板">
@@ -80,11 +80,13 @@
                 <StackPanel>
                     <TextBlock Text="今日亮屏" FontSize="10" Foreground="{DynamicResource Muted}"/>
                     <TextBlock x:Name="WidgetScreen" Text="—" FontSize="25" FontWeight="SemiBold" Margin="0,4,0,0"/>
+                    <TextBlock Text="图表：亮屏与活跃" FontSize="9" Foreground="{DynamicResource Secondary}" Margin="0,4,0,0"/>
                 </StackPanel>
                 <Border Grid.Column="1" Background="{DynamicResource Line}" Margin="0,2,0,4"/>
-                <StackPanel Grid.Column="2" Margin="18,0,0,0" ToolTip="前台应用时间合计，不含屏幕时间自身。">
-                    <TextBlock Text="应用使用" FontSize="10" Foreground="{DynamicResource Muted}"/>
+                <StackPanel Grid.Column="2" Margin="18,0,0,0" ToolTip="活跃时长按空闲规则估算，不含屏幕时间自身。">
+                    <TextBlock Text="活跃时长" FontSize="10" Foreground="{DynamicResource Muted}"/>
                     <TextBlock x:Name="WidgetForeground" Text="—" FontSize="25" FontWeight="SemiBold" Foreground="{DynamicResource Accent}" Margin="0,4,0,0"/>
+                    <TextBlock x:Name="WidgetRawForeground" Text="前台 —" FontSize="9" Foreground="{DynamicResource Secondary}" Margin="0,4,0,0" TextTrimming="CharacterEllipsis"/>
                 </StackPanel>
             </Grid>
             <Grid Grid.Row="2" Margin="-1,5,0,0">

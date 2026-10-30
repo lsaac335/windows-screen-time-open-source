@@ -18,6 +18,9 @@ public interface IAppController
     bool AutoRecord { get; set; }
     bool AutoStartWidget { get; set; }
     bool IdleFilterEnabled { get; set; }
+    int IdleTimeoutMinutes { get; set; }
+    int? GetAppIdleTimeoutMinutes(string appId);
+    void SetAppIdleTimeoutMinutes(string appId, int? minutes);
     bool DarkMode { get; set; }
     bool AlwaysOnTop { get; set; }
     bool WidgetEnabled { get; set; }

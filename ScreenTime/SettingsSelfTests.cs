@@ -22,6 +22,8 @@ public static class SettingsSelfTests
         var fresh = AppSettings.Load(path);
         Check(fresh.AutoRecord && fresh.DarkMode, "new settings default to automatic recording and dark mode");
         Check(fresh.AutoStartWidget && fresh.IdleFilterEnabled, "new settings enable login widget display and idle filtering");
+        Check(fresh.IdleTimeoutMinutes == 5 && fresh.IdleTimeoutOverrides.Count == 0,
+            "new settings preserve five-minute idle policy without application overrides");
         Check(!fresh.AlwaysOnTop, "pinning is opt-in by default");
         Check(fresh.WidgetEnabled && !fresh.WidgetPinned && !fresh.WidgetLocked && fresh.WidgetLeft == null && fresh.WidgetTop == null,
             "new settings start in widget mode with no persisted placement");
@@ -32,6 +34,8 @@ public static class SettingsSelfTests
         var migrated = AppSettings.Load(path);
         Check(migrated.AutoRecord && migrated.DarkMode, "old JSON missing new fields receives enabled defaults");
         Check(migrated.AutoStartWidget && migrated.IdleFilterEnabled, "legacy settings receive login-widget and idle-filter defaults");
+        Check(migrated.IdleTimeoutMinutes == 5 && migrated.IdleTimeoutOverrides.Count == 0,
+            "legacy settings keep the previous five-minute interpretation");
         Check(migrated.RecordingEnabled && migrated.Paused && migrated.CreatedVersion == "0.1.0", "loading legacy settings preserves existing fields for the startup policy");
         Check(migrated.WidgetEnabled && !migrated.WidgetPinned && !migrated.WidgetLocked && migrated.WidgetLeft == null && migrated.WidgetTop == null,
             "legacy settings use widget mode when no display preference was saved");
@@ -113,11 +117,29 @@ public static class SettingsSelfTests
             Check(login.WidgetEnabled, "explicit widget launch overrides the quiet login preference");
         }
 
+        foreach (int minutes in new[] { 1, 3, 5, 10, 15, 30 })
+        {
+            var policy = new AppSettings { IdleTimeoutMinutes = minutes, IdleFilterEnabled = false };
+            policy.IdleTimeoutOverrides["reader"] = 0;
+            policy.IdleTimeoutOverrides["chat"] = 1;
+            policy.Save(path);
+            var reloaded = AppSettings.Load(path);
+            Check(reloaded.IdleTimeoutMinutes == minutes && !reloaded.IdleFilterEnabled,
+                "threshold and disabled filter round trip independently: " + minutes);
+            Check(reloaded.IdleTimeoutOverrides["READER"] == 0 && reloaded.IdleTimeoutOverrides["chat"] == 1,
+                "per-app overrides persist with case-insensitive identities");
+            reloaded.IdleTimeoutOverrides.Remove("reader");
+            reloaded.Save(path);
+            Check(!AppSettings.Load(path).IdleTimeoutOverrides.ContainsKey("reader"), "removing override restores global policy");
+        }
+
         File.WriteAllText(path, "{\"AutoRecord\":false,\"FutureOption\":\"unrecognized\"}");
         var future = AppSettings.Load(path);
         Check(!future.AutoRecord && future.DarkMode, "missing dark preference defaults independently of explicit auto-record preference");
 
-        foreach (var invalid in new[] { "{invalid", "null", "{\"AutoRecord\":null}" })
+        foreach (var invalid in new[] { "{invalid", "null", "{\"AutoRecord\":null}",
+            "{\"IdleTimeoutMinutes\":0}", "{\"IdleTimeoutMinutes\":-1}", "{\"IdleTimeoutMinutes\":2}",
+            "{\"IdleTimeoutOverrides\":null}", "{\"IdleTimeoutOverrides\":{\"app\":-1}}" })
         {
             File.WriteAllText(path, invalid);
             bool rejected = false;
