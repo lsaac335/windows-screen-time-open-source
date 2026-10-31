@@ -22,11 +22,35 @@ public partial class App : Application
     private bool _shuttingDown;
     private bool _quietWidgetStart;
     private bool _viewCleanupQueued;
+    private bool _backgroundMode;
 
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
         _quietWidgetStart = e.Args.Contains("--tray");
+        if (e.Args.Contains("--theme-self-test"))
+        {
+            string output = Arg(e.Args, "--test-output")!;
+            try { File.WriteAllText(output, SystemThemeSelfTests.Run(Path.Combine(Path.GetDirectoryName(output)!, "theme-test-" + Guid.NewGuid().ToString("N")))); Shutdown(0); }
+            catch (Exception ex) { File.WriteAllText(output, ex.ToString()); Shutdown(1); }
+            return;
+        }
+        if (e.Args.Contains("--resource-probe"))
+        {
+            string output = Arg(e.Args, "--test-output")!;
+            try { File.WriteAllText(output, ResourceProbe.Run(Arg(e.Args, "--resource-probe") == "on")); Shutdown(0); }
+            catch (Exception ex) { File.WriteAllText(output, ex.ToString()); Shutdown(1); }
+            return;
+        }
+        if (e.Args.Contains("--visibility-fixture"))
+        { VisibilityNativeSelfTests.Fixture(Arg(e.Args, "--visibility-fixture")!); Shutdown(); return; }
+        if (e.Args.Contains("--visibility-native-test"))
+        {
+            var output = Arg(e.Args, "--test-output")!;
+            try { File.WriteAllText(output, VisibilityNativeSelfTests.Run(Path.Combine(Path.GetDirectoryName(output)!, "visibility-native-fixture"))); Shutdown(0); }
+            catch (Exception ex) { File.WriteAllText(output, ex.ToString()); Shutdown(1); }
+            return;
+        }
         if (e.Args.Contains("--media-self-test"))
         {
             var output = Arg(e.Args, "--test-output") ?? Path.Combine(AppContext.BaseDirectory, "media-test.txt");
@@ -44,7 +68,7 @@ public partial class App : Application
         if (e.Args.Contains("--self-test"))
         {
             var output = Arg(e.Args, "--test-output") ?? Path.Combine(AppContext.BaseDirectory, "self-test.txt");
-            try { File.WriteAllText(output, CoreSelfTests.Run() + Environment.NewLine + SettingsSelfTests.Run() + Environment.NewLine + IdleFilterSelfTests.Run() + Environment.NewLine + NativeTimingSelfTests.Run() + Environment.NewLine + ActivityEvidenceSelfTests.Run()); Shutdown(0); }
+            try { File.WriteAllText(output, CoreSelfTests.Run() + Environment.NewLine + SettingsSelfTests.Run() + Environment.NewLine + IdleFilterSelfTests.Run() + Environment.NewLine + NativeTimingSelfTests.Run() + Environment.NewLine + ActivityEvidenceSelfTests.Run() + Environment.NewLine + VisibilitySelfTests.Run()); Shutdown(0); }
             catch (Exception ex) { File.WriteAllText(output, ex.ToString()); Shutdown(1); }
             return;
         }
@@ -96,6 +120,7 @@ public partial class App : Application
             catch (Exception ex) { MessageBox.Show("组件设置未保存：" + ex.Message, "屏幕时间", MessageBoxButton.OK, MessageBoxImage.Warning); }
         });
         menu.Items.Add(_widgetItem);
+        menu.Items.Add("隐藏窗口，后台记录", null, (_, _) => RunInBackground());
         _pauseItem = new Forms.ToolStripMenuItem("开始记录", null, (_, _) => _controller.TogglePause());
         menu.Items.Add(_pauseItem);
         menu.Items.Add(new Forms.ToolStripSeparator());
@@ -117,7 +142,7 @@ public partial class App : Application
     }
     private void UpdateWidgetMode()
     {
-        if (_shuttingDown || _controller == null) return;
+        if (_shuttingDown || _backgroundMode || _controller == null) return;
         if (!Dispatcher.CheckAccess()) { Dispatcher.BeginInvoke(new Action(UpdateWidgetMode)); return; }
         bool enabled = _controller.WidgetEnabled;
         if (_widgetMode == enabled) return;
@@ -137,6 +162,7 @@ public partial class App : Application
     private void RevealWidget()
     {
         if (_shuttingDown || _controller == null) return;
+        _backgroundMode = false;
         _controller.WidgetEnabled = true;
         EnsureWidget();
         _widget?.ShowWidget(reveal: true);
@@ -148,26 +174,31 @@ public partial class App : Application
         var widget = new WidgetWindow(_controller);
         _widget = widget;
         widget.OpenDashboardRequested += () => ShowPanel(true);
+        widget.BackgroundRequested += RunInBackground;
         widget.Closed += (_, _) =>
         {
             if (ReferenceEquals(_widget, widget)) _widget = null;
+            if (ReferenceEquals(MainWindow, widget)) MainWindow = _window;
             // Sampling owns its own HWND, so recreating the component never stops recording.
-            if (!_shuttingDown && _controller.WidgetEnabled)
-                Dispatcher.BeginInvoke(new Action(() => { if (_shuttingDown || !_controller.WidgetEnabled) return; EnsureWidget(); _widget?.ShowWidget(); }));
+            if (!_shuttingDown && !_backgroundMode && _controller.WidgetEnabled)
+                Dispatcher.BeginInvoke(new Action(() => { if (_shuttingDown || _backgroundMode || !_controller.WidgetEnabled) return; EnsureWidget(); _widget?.ShowWidget(); }));
         };
     }
     private void ShowPanel(bool dashboard = false)
     {
         if (_shuttingDown || _controller == null) return;
+        _backgroundMode = false;
         if (_window == null)
         {
             var panel = new MainWindow(_controller);
             _window = panel;
             MainWindow = panel;
             panel.WidgetRequested += RevealWidget;
+            panel.BackgroundRequested += RunInBackground;
             panel.Closed += (_, _) =>
             {
                 panel.WidgetRequested -= RevealWidget;
+                panel.BackgroundRequested -= RunInBackground;
                 if (ReferenceEquals(_window, panel)) _window = null;
                 if (ReferenceEquals(MainWindow, panel)) MainWindow = _widget;
                 _controller.TrimViewCaches();
@@ -180,6 +211,16 @@ public partial class App : Application
     private void ReleasePanel()
     {
         _window?.Close();
+    }
+    private void RunInBackground()
+    {
+        if (_shuttingDown) return;
+        _backgroundMode = true;
+        _widget?.PrepareForExit();
+        _widget?.Close();
+        ReleasePanel();
+        _controller?.TrimViewCaches();
+        QueueViewCleanup();
     }
     private void QueueViewCleanup()
     {

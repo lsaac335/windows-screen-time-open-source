@@ -11,7 +11,7 @@
     <LangVersion>10.0</LangVersion>
     <AssemblyName>ScreenTime</AssemblyName>
     <RootNamespace>ScreenTime</RootNamespace>
-    <Version>0.4.0</Version>
+    <Version>0.5.1</Version>
     <Title>屏幕时间</Title>
     <Description>本地优先的 Windows 应用与亮屏时间统计</Description>
     <RollForward>LatestMajor</RollForward>

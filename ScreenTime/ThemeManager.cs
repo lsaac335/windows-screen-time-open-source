@@ -57,6 +57,23 @@ public static class ThemeManager
     }
     private static void Invalidate(DependencyObject parent)
     {
+        // Detail views also contain palette brushes assigned in code. Update those
+        // without rebuilding the dialog or replacing non-theme artwork/brushes.
+        List<(DependencyProperty Property, Brush Value)>? changes = null;
+        var values = parent.GetLocalValueEnumerator();
+        while (values.MoveNext())
+        {
+            var entry = values.Current;
+            if (entry.Value is not Brush current || entry.Property.ReadOnly) continue;
+            foreach (string key in Dark.Keys)
+                if (ReferenceEquals(current, Dark[key]) || ReferenceEquals(current, Light[key]))
+                {
+                    Brush target = (IsDark ? Dark : Light)[key];
+                    if (!ReferenceEquals(current, target)) (changes ??= new()).Add((entry.Property, target));
+                    break;
+                }
+        }
+        if (changes != null) foreach (var change in changes) parent.SetValue(change.Property, change.Value);
         if (parent is UsageChart chart) chart.InvalidateVisual();
         for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++) Invalidate(VisualTreeHelper.GetChild(parent, i));
     }

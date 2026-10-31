@@ -14,6 +14,8 @@ public sealed class AppController : IAppController, IDisposable
     private readonly AppSettings _settings;
     private readonly string _settingsPath;
     private readonly DispatcherTimer _timer;
+    private readonly SystemThemeMonitor _systemTheme;
+    internal SystemThemeMonitor SystemTheme => _systemTheme;
     private TrackingService? _tracker;
     private bool _attached;
     private string? _error;
@@ -100,6 +102,20 @@ public sealed class AppController : IAppController, IDisposable
             Updated?.Invoke();
         }
     }
+    public bool VisibilityDetectionEnabled
+    {
+        get => _settings.VisibilityDetectionEnabled;
+        set
+        {
+            if (value == _settings.VisibilityDetectionEnabled) return;
+            bool previous = _settings.VisibilityDetectionEnabled;
+            _tracker?.SetVisibilityDetection(value);
+            _settings.VisibilityDetectionEnabled = value;
+            try { _settings.Save(_settingsPath); }
+            catch { _settings.VisibilityDetectionEnabled = previous; _tracker?.SetVisibilityDetection(previous); throw; }
+            Updated?.Invoke();
+        }
+    }
     public int? GetAppIdleTimeoutMinutes(string appId) =>
         _settings.IdleTimeoutOverrides.TryGetValue(appId, out int minutes) ? minutes : null;
     public void SetAppIdleTimeoutMinutes(string appId, int? minutes)
@@ -134,16 +150,41 @@ public sealed class AppController : IAppController, IDisposable
     }
     public bool DarkMode
     {
-        get => _settings.DarkMode;
+        get => _settings.FollowSystemTheme ? _systemTheme.IsDark : _settings.DarkMode;
         set
         {
-            if (_settings.DarkMode == value) return;
+            if (!_settings.FollowSystemTheme && _settings.DarkMode == value) return;
             var previous = _settings.DarkMode;
+            var previousFollow = _settings.FollowSystemTheme;
             _settings.DarkMode = value;
+            _settings.FollowSystemTheme = false;
             try { _settings.Save(_settingsPath); }
-            catch { _settings.DarkMode = previous; throw; }
-            Updated?.Invoke();
+            catch { _settings.DarkMode = previous; _settings.FollowSystemTheme = previousFollow; throw; }
+            NotifyAppearanceChanged();
         }
+    }
+    public bool FollowSystemTheme
+    {
+        get => _settings.FollowSystemTheme;
+        set
+        {
+            if (_settings.FollowSystemTheme == value) return;
+            bool previous = _settings.FollowSystemTheme;
+            _settings.FollowSystemTheme = value;
+            try { _settings.Save(_settingsPath); }
+            catch { _settings.FollowSystemTheme = previous; throw; }
+            NotifyAppearanceChanged();
+        }
+    }
+    private void SystemAppearanceChanged()
+    { if (_settings.FollowSystemTheme) NotifyAppearanceChanged(); }
+    private void NotifyAppearanceChanged()
+    {
+        // Includes an already open app-details dialog; no new views are created.
+        if (System.Windows.Application.Current != null)
+            foreach (System.Windows.Window window in System.Windows.Application.Current.Windows)
+                ThemeManager.Apply(window, DarkMode);
+        Updated?.Invoke();
     }
     public bool AlwaysOnTop
     {
@@ -208,7 +249,7 @@ public sealed class AppController : IAppController, IDisposable
         Updated?.Invoke();
     }
 
-    public AppController(string dataDirectory, bool autoStart = false, bool forceWidget = false)
+    public AppController(string dataDirectory, bool autoStart = false, bool forceWidget = false, Func<bool>? systemThemeReader = null)
     {
         Directory.CreateDirectory(dataDirectory);
         _settingsPath = Path.Combine(dataDirectory, "settings.json");
@@ -217,6 +258,8 @@ public sealed class AppController : IAppController, IDisposable
         _store = new UsageStore(dataDirectory);
         _timer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(1) };
         _timer.Tick += OnTick;
+        _systemTheme = new SystemThemeMonitor(systemThemeReader);
+        _systemTheme.Changed += SystemAppearanceChanged;
     }
 
     public void Attach()
@@ -231,7 +274,7 @@ public sealed class AppController : IAppController, IDisposable
     {
         if (_tracker != null || !_attached) return;
         _tracker = new TrackingService(_settings.IdleFilterEnabled, _settings.IdleTimeoutMinutes,
-            _settings.IdleTimeoutOverrides, _settings.Paused, MediaDetectionEnabled, GamepadDetectionEnabled);
+            _settings.IdleTimeoutOverrides, _settings.Paused, MediaDetectionEnabled, GamepadDetectionEnabled, VisibilityDetectionEnabled);
     }
 
     public void StartRecording()
@@ -256,7 +299,7 @@ public sealed class AppController : IAppController, IDisposable
         try
         {
             _tracker?.SetPaused(!previous);
-            _tracker?.DrainSegments(_store.Add);
+            DrainTracking();
             _settings.Paused = !previous;
             _settings.Save(_settingsPath);
             _store.Save();
@@ -270,12 +313,12 @@ public sealed class AppController : IAppController, IDisposable
     {
         try
         {
-            _tracker?.DrainSegments(_store.Add);
+            DrainTracking();
             _ticks++;
             if (_ticks % 10 == 0)
             {
                 _tracker?.Flush();
-                _tracker?.DrainSegments(_store.Add);
+                DrainTracking();
                 _store.Save();
                 if (_ticks % 3600 == 0) _store.Prune();
                 WriteRuntimeStatus();
@@ -291,18 +334,19 @@ public sealed class AppController : IAppController, IDisposable
         var widget = System.Windows.Application.Current?.Windows.OfType<WidgetWindow>().FirstOrDefault();
         var snapshot = new
         {
-            Version = "0.4.0", ProcessId = Environment.ProcessId,
+            Version = "0.5.1", ProcessId = Environment.ProcessId,
             DashboardWindows = System.Windows.Application.Current?.Windows.OfType<MainWindow>().Count(),
             FullGcCollections = GC.CollectionCount(GC.MaxGeneration),
             Runtime = Environment.Version.ToString(), UpdatedAt = DateTimeOffset.Now,
             RecordingEnabled = IsRecordingEnabled, Paused = IsPaused,
-            AutoRecord = AutoRecord, AutoStartWidget, IdleFilterEnabled, IdleTimeoutMinutes, MediaDetectionEnabled, GamepadDetectionEnabled,
+            AutoRecord = AutoRecord, AutoStartWidget, IdleFilterEnabled, IdleTimeoutMinutes, MediaDetectionEnabled, GamepadDetectionEnabled, VisibilityDetectionEnabled,
             CachedDays = _store.CachedDayCount, CachedIcons = _icons.Count,
+            CachedVisibilityDays = _store.CachedVisibilityDays,
             AppIdleRuleCount = _settings.IdleTimeoutOverrides.Count,
             SamplerThreadId = _tracker?.SamplerThreadId, SamplerTicks = _tracker?.SampleCount,
             SamplerPendingSegments = _tracker?.PendingSegments,
             InputIdleSeconds = _tracker?.InputIdleSeconds, IsIdle = _tracker?.IsIdle,
-            DarkMode = DarkMode, AlwaysOnTop = AlwaysOnTop,
+            DarkMode = DarkMode, FollowSystemTheme, SystemDarkMode = _systemTheme.IsDark, AlwaysOnTop = AlwaysOnTop,
             WidgetEnabled, WidgetPinned, WidgetLocked, WidgetLeft, WidgetTop,
             WidgetVisible = widget?.IsVisible,
             WidgetIsActive = widget?.IsActive,
@@ -401,7 +445,8 @@ public sealed class AppController : IAppController, IDisposable
         FlushRequired();
         _store.ExportCsv(path, from, to);
     }
-    private void FlushRequired() { _tracker?.Flush(); _tracker?.DrainSegments(_store.Add); _store.Save(); }
+    private void DrainTracking() { _tracker?.DrainSegments(_store.Add); _tracker?.DrainVisible(_store.AddVisible); }
+    private void FlushRequired() { _tracker?.Flush(); DrainTracking(); _store.Save(); }
     public void DeleteRange(DateTime start, DateTime end)
     {
         FlushRequired();
@@ -437,10 +482,12 @@ public sealed class AppController : IAppController, IDisposable
         if (_disposed) return;
         _disposed = true;
         _timer.Stop();
+        _systemTheme.Changed -= SystemAppearanceChanged;
+        _systemTheme.Dispose();
         Exception? failure = null;
         try { _tracker?.Dispose(); }
         catch (Exception ex) { failure = ex; }
-        try { _tracker?.DrainSegments(_store.Add); _store.Save(); _settings.Save(_settingsPath); }
+        try { DrainTracking(); _store.Save(); _settings.Save(_settingsPath); }
         catch (Exception ex) { failure ??= ex; }
         if (failure != null)
         {

@@ -6,6 +6,9 @@
     <ImplicitUsings>disable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../ScreenTime/VisibilityGeometry.cs" Link="VisibilityGeometry.cs" />
+    <Compile Include="../../ScreenTime/VisibleUsageStore.cs" Link="VisibleUsageStore.cs" />
+    <Compile Include="../../ScreenTime/VisibilitySelfTests.cs" Link="VisibilitySelfTests.cs" />
     <Compile Include="../../ScreenTime/Models.cs" Link="Models.cs" />
     <Compile Include="../../ScreenTime/UsageStore.cs" Link="UsageStore.cs" />
     <Compile Include="../../ScreenTime/CoreSelfTests.cs" Link="CoreSelfTests.cs" />

@@ -80,8 +80,8 @@ public static class CoreSelfTests
         string csvPath = Path.Combine(root, "export.csv");
         store.ExportCsv(csvPath, today, today.AddDays(1));
         string csv = File.ReadAllText(csvPath);
-        Check(csv.Contains("'  =HYPERLINK") && csv.Contains(",30,4"), "CSV formula safety and invariant numeric seconds");
-        Check(csv.Contains("\"coverage\",\"无有效记录\",,4"), "unobserved day is not a false zero");
+        Check(csv.Contains("'  =HYPERLINK") && csv.Contains(",30,5"), "CSV formula safety and invariant numeric seconds");
+        Check(csv.Contains("\"coverage\",\"无有效记录\",,5"), "unobserved day is not a false zero");
         store.Save();
         var reloaded = new UsageStore(store.DataDirectory);
         Check(Near(reloaded.GetDay(today).ForegroundSeconds, store.GetDay(today).ForegroundSeconds), "save and reload");
@@ -182,8 +182,8 @@ public static class CoreSelfTests
         string migratedCsvPath = Path.Combine(root, "self-exclusion.csv");
         legacyReload.ExportCsv(migratedCsvPath, legacyDate, legacyDate);
         string migratedCsv = File.ReadAllText(migratedCsvPath);
-        Check(!migratedCsv.Contains(legacySelfName) && migratedCsv.Contains("\"active\",\"活跃时长（扣除空闲）\",30,4") &&
-              migratedCsv.Contains("\"screen\",\"亮屏时长\",140,4"), "CSV exports corrected activity with retained screen total and rule version 4");
+        Check(!migratedCsv.Contains(legacySelfName) && migratedCsv.Contains("\"active\",\"活跃时长（扣除空闲）\",30,5") &&
+              migratedCsv.Contains("\"screen\",\"亮屏时长\",140,5"), "CSV exports corrected activity with retained screen total and rule version 5");
 
         // Archived summaries have no raw intervals left; migration must not fabricate any.
         string archiveDirectory = Path.Combine(root, "legacy-self-archive");
@@ -293,8 +293,8 @@ public static class CoreSelfTests
         string dualCsvPath = Path.Combine(root, "dual-metrics.csv");
         dual.ExportCsv(dualCsvPath, mixedDate, dualDate.AddDays(1));
         string dualCsv = File.ReadAllText(dualCsvPath);
-        Check(dualCsv.Contains("ForegroundIsLowerBound") && dualCsv.Contains("\"foreground\",\"前台时长（旧记录仅为下限）\",180,4,true") &&
-              dualCsv.Contains("\"app_active\",\"reader\",60,4,false") && dualCsv.Contains("\"app_foreground\",\"reader\",120,4,false"),
+        Check(dualCsv.Contains("ForegroundIsLowerBound") && dualCsv.Contains("\"foreground\",\"前台时长（旧记录仅为下限）\",180,5,true") &&
+              dualCsv.Contains("\"app_active\",\"reader\",60,5,false") && dualCsv.Contains("\"app_foreground\",\"reader\",120,5,false"),
             "CSV explicitly distinguishes active, foreground and legacy lower-bound values");
         DateTime rawArchiveDate = today.AddDays(-91);
         dual.Add(new UsageSegment { Start = At(rawArchiveDate.AddHours(8)), End = At(rawArchiveDate.AddHours(8).AddMinutes(1)),

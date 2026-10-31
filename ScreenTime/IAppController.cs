@@ -20,10 +20,12 @@ public interface IAppController
     bool IdleFilterEnabled { get; set; }
     bool MediaDetectionEnabled { get; set; }
     bool GamepadDetectionEnabled { get; set; }
+    bool VisibilityDetectionEnabled { get; set; }
     int IdleTimeoutMinutes { get; set; }
     int? GetAppIdleTimeoutMinutes(string appId);
     void SetAppIdleTimeoutMinutes(string appId, int? minutes);
     bool DarkMode { get; set; }
+    bool FollowSystemTheme { get; set; }
     bool AlwaysOnTop { get; set; }
     bool WidgetEnabled { get; set; }
     bool WidgetPinned { get; set; }

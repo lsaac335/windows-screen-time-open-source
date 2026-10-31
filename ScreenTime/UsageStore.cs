@@ -14,6 +14,9 @@ public sealed class UsageStore
     public string DataDirectory { get; }
     public string TimeZoneId => _zone.Id;
     private readonly TimeZoneInfo _zone;
+    private readonly VisibleUsageStore _visibility;
+    public int CachedVisibilityDays => _visibility.CachedDays;
+    public void AddVisible(VisibleInterval interval) => _visibility.Add(interval);
     private readonly Dictionary<string, DayFile> _days = new(StringComparer.Ordinal);
     private readonly HashSet<string> _dirty = new(StringComparer.Ordinal);
     private readonly HashSet<string> _knownDays = new(StringComparer.Ordinal);
@@ -58,6 +61,7 @@ public sealed class UsageStore
             WriteAtomic(metaPath, new StoreMeta { TimeZoneId = _zone.Id });
         }
 
+        _visibility = new VisibleUsageStore(Path.Combine(DataDirectory, "visibility"), _zone);
         foreach (var path in Directory.EnumerateFiles(DataDirectory, "????-??-??.json"))
         {
             string key = Path.GetFileNameWithoutExtension(path);
@@ -105,6 +109,7 @@ public sealed class UsageStore
 
     public void TrimCache(int maximumDays = MaximumCachedDays)
     {
+        _visibility.Trim(maximumDays);
         string today = Today().ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         // The byte estimate bounds retained detail, in addition to a fixed date count.
         long Estimate() => _days.Values.Sum(d => 2048L + (d.Segments?.Sum(s => 128L + 2L * (s.AppId.Length + s.AppName.Length)) ?? 0));
@@ -167,11 +172,16 @@ public sealed class UsageStore
     {
         string key = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         if (!_knownDays.Contains(key))
-            return new DaySummary { Date = key, HasHourlyDetails = date.Date >= Today().AddDays(-89) };
+        {
+            var empty = new DaySummary { Date = key, HasHourlyDetails = date.Date >= Today().AddDays(-89) };
+            _visibility.Apply(empty, date);
+            return empty;
+        }
         var day = LoadDay(key);
         EnsureSummary(key, day);
         // Return a detached value so a UI filter cannot modify persisted aggregate state.
         var result = Clone(day.Summary);
+        _visibility.Apply(result, date);
         TrimCache();
         return result;
     }
@@ -185,6 +195,7 @@ public sealed class UsageStore
 
     public void Save()
     {
+        _visibility.Save();
         foreach (string key in _dirty.ToArray())
         {
             if (!_days.TryGetValue(key, out var day)) continue;
@@ -210,7 +221,7 @@ public sealed class UsageStore
                     .Append(day.HasData ? "true" : "false").Append(',').Append(day.HasGaps ? "true" : "false").Append(',')
                     .Append(Csv(metric)).Append(',').Append(Csv(name)).Append(',')
                     .Append(seconds.HasValue ? seconds.Value.ToString("0.######", CultureInfo.InvariantCulture) : "")
-                    .Append(",4,").AppendLine(day.HasLegacyActivity ? "true" : "false");
+                    .Append(",5,").AppendLine(day.HasLegacyActivity ? "true" : "false");
             }
             if (!day.HasData)
             {
@@ -224,12 +235,15 @@ public sealed class UsageStore
             Row("locked", "锁屏亮屏时长", day.LockedSeconds);
             Row("observed", "已观测时长", day.ObservedSeconds);
             Row("unknown", "未记录/状态未知", day.UnknownSeconds);
+            Row("visibility_coverage", "已采集可见状态的解锁亮屏时间", day.VisibilityObservedSeconds);
+            if (day.VisibilityObservedSeconds > 0) Row("visible_parallel_sum", "应用可见时间之和（允许重叠）", day.VisibleSeconds);
             foreach (var app in day.Apps)
             {
                 Row("app_active", app.Name, app.Seconds);
                 Row("app_foreground", app.Name, app.ForegroundSeconds);
                 Row("app_media_inferred", app.Name, app.MediaSeconds);
                 Row("app_gamepad", app.Name, app.GamepadSeconds);
+                if (day.VisibilityObservedSeconds > 0) Row("app_visible", app.Name, app.VisibleSeconds);
             }
         }
         File.WriteAllText(path, text.ToString(), new UTF8Encoding(true));
@@ -238,6 +252,7 @@ public sealed class UsageStore
     public void DeleteRange(DateTime start, DateTime end)
     {
         if (end.Date < start.Date) throw new ArgumentException("结束日期不能早于开始日期。");
+        _visibility.DeleteRange(start, end);
         foreach (var key in _knownDays.ToArray())
         {
             DateTime day = DateTime.ParseExact(key, "yyyy-MM-dd", CultureInfo.InvariantCulture);
@@ -260,6 +275,7 @@ public sealed class UsageStore
 
     public void DeleteAll()
     {
+        _visibility.DeleteRange(DateTime.MinValue, DateTime.MaxValue);
         foreach (var key in _knownDays.ToArray())
         {
             File.Delete(DayPath(key));
@@ -275,6 +291,7 @@ public sealed class UsageStore
 
     public void Prune()
     {
+        _visibility.Prune();
         DateTime today = Today();
         foreach (string key in _knownDays.ToArray())
         {

@@ -21,6 +21,8 @@ public partial class WidgetWindow : Window
     private readonly MenuItem _lockedMenu = new() { Header = "锁定位置", IsCheckable = true };
     private readonly MenuItem _pinnedMenu = new() { Header = "浮动置顶", IsCheckable = true };
     private readonly MenuItem _darkMenu = new() { Header = "深色模式", IsCheckable = true };
+    private readonly MenuItem _lightMenu = new() { Header = "浅色模式", IsCheckable = true };
+    private readonly MenuItem _systemThemeMenu = new() { Header = "跟随系统主题", IsCheckable = true };
     private readonly List<WidgetAppRow> _appRows = new();
     private bool _allowClose, _placed, _rendering, _modeChanging;
     private bool? _lastPinned;
@@ -29,6 +31,7 @@ public partial class WidgetWindow : Window
     private string _modeText = "桌面浮窗", _modeDetail = "普通窗口可以覆盖组件。点击任务栏入口或托盘的“显示小组件”可重新唤出。";
 
     public event Action? OpenDashboardRequested;
+    public event Action? BackgroundRequested;
     public string ModeDetail => _modeDetail;
     public string ModeName => _modeText;
 
@@ -104,7 +107,7 @@ public partial class WidgetWindow : Window
             {
                 Topmost = false;
                 _modeText = "桌面浮窗";
-                _modeDetail = "普通窗口可以覆盖组件。点击任务栏入口或托盘的“显示小组件”可重新唤出。";
+                _modeDetail = "普通窗口可以覆盖组件。组件不显示任务栏图标；可从托盘“显示小组件”重新唤出。";
             }
             _lastPinned = _controller.WidgetPinned;
             ClampPosition();
@@ -121,6 +124,7 @@ public partial class WidgetWindow : Window
         if (_lastPinned != _controller.WidgetPinned)
             RefreshMode();
         Render();
+        if (_menu.IsOpen) RefreshMenu();
     }
 
     private void Render()
@@ -232,12 +236,16 @@ public partial class WidgetWindow : Window
         _menu.Style = (Style)FindResource("WidgetMenu");
         _menu.Resources.MergedDictionaries.Add(Resources);
         var open = new MenuItem { Header = "打开完整面板" }; open.Click += (_, _) => OpenDashboardRequested?.Invoke();
+        var background = new MenuItem { Header = "隐藏窗口，后台记录" }; background.Click += (_, _) => BackgroundRequested?.Invoke();
         _lockedMenu.Click += (_, _) => Safe(() => _controller.WidgetLocked = !_controller.WidgetLocked);
         _pinnedMenu.Click += (_, _) => Safe(() => _controller.WidgetPinned = !_controller.WidgetPinned);
-        _darkMenu.Click += (_, _) => Safe(() => _controller.DarkMode = !_controller.DarkMode);
+        _darkMenu.Click += (_, _) => Safe(() => _controller.DarkMode = true);
+        _lightMenu.Click += (_, _) => Safe(() => _controller.DarkMode = false);
+        _systemThemeMenu.Click += (_, _) => Safe(() => _controller.FollowSystemTheme = true);
         var hide = new MenuItem { Header = "隐藏组件" }; hide.Click += (_, _) => Safe(HideWidget);
-        _menu.Items.Add(open); _menu.Items.Add(new Separator()); _menu.Items.Add(_lockedMenu); _menu.Items.Add(_pinnedMenu); _menu.Items.Add(_darkMenu);
-        _menu.Items.Add(new Separator()); _menu.Items.Add(hide);
+        _menu.Items.Add(open); _menu.Items.Add(new Separator()); _menu.Items.Add(_lockedMenu); _menu.Items.Add(_pinnedMenu);
+        _menu.Items.Add(new Separator()); _menu.Items.Add(_systemThemeMenu); _menu.Items.Add(_lightMenu); _menu.Items.Add(_darkMenu);
+        _menu.Items.Add(new Separator()); _menu.Items.Add(background); _menu.Items.Add(hide);
         foreach (var item in _menu.Items.OfType<MenuItem>()) item.Style = (Style)FindResource("WidgetMenuItem");
         foreach (var separator in _menu.Items.OfType<Separator>()) separator.Style = (Style)FindResource("WidgetMenuSeparator");
     }
@@ -246,7 +254,9 @@ public partial class WidgetWindow : Window
     {
         _lockedMenu.IsChecked = _controller.WidgetLocked;
         _pinnedMenu.IsChecked = _controller.WidgetPinned;
-        _darkMenu.IsChecked = _controller.DarkMode;
+        _systemThemeMenu.IsChecked = _controller.FollowSystemTheme;
+        _darkMenu.IsChecked = !_controller.FollowSystemTheme && _controller.DarkMode;
+        _lightMenu.IsChecked = !_controller.FollowSystemTheme && !_controller.DarkMode;
         _menu.Background = ThemeManager.GetBrush("CardBackground"); _menu.Foreground = ThemeManager.GetBrush("Ink"); _menu.BorderBrush = ThemeManager.GetBrush("Line");
         foreach (var item in _menu.Items.OfType<MenuItem>()) { item.Foreground = ThemeManager.GetBrush("Ink"); item.Background = Brushes.Transparent; }
     }

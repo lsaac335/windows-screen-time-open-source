@@ -19,6 +19,7 @@ namespace ScreenTime
         private bool _followToday = true;
         private bool _isWeek;
         private bool _showRawForeground;
+        private bool _showVisible;
         private bool _ready;
         private bool _rendering;
         private bool? _lastDarkMode;
@@ -31,6 +32,7 @@ namespace ScreenTime
         private readonly Dictionary<StackPanel, Dictionary<string, AppRowView>> _rowCaches = new Dictionary<StackPanel, Dictionary<string, AppRowView>>();
         private static readonly string[] AppColors = { "#6561E7", "#38A895", "#E5A252", "#528DCE", "#C779AE", "#7686AD" };
         public event Action? WidgetRequested;
+        public event Action? BackgroundRequested;
 
         public MainWindow(IAppController controller)
         {
@@ -132,13 +134,14 @@ namespace ScreenTime
                 IdleFilterCheck.IsChecked = _controller.IdleFilterEnabled;
                 MediaDetectionCheck.IsChecked = _controller.MediaDetectionEnabled;
                 GamepadDetectionCheck.IsChecked = _controller.GamepadDetectionEnabled;
+                VisibilityDetectionCheck.IsChecked = _controller.VisibilityDetectionEnabled;
                 IdleTimeoutSelector.SelectedValue = _controller.IdleTimeoutMinutes.ToString(CultureInfo.InvariantCulture);
                 IdleTimeoutSelector.IsEnabled = _controller.IdleFilterEnabled;
                 IdleRuleDescription.Text = "开启后，连续 " + _controller.IdleTimeoutMinutes + " 分钟无键鼠操作的后续区间会排除；前 " + _controller.IdleTimeoutMinutes + " 分钟仍计入活跃。前台时长与亮屏时长不受影响。\n\n下方可用媒体播放和手柄输入补充活动依据。阅读仍可能被判为空闲，可在应用详情单独调整规则。修改只影响之后的记录。";
                 ForegroundRuleText.Text = _controller.IdleFilterEnabled
                     ? "活跃时长按键鼠操作" + (_controller.MediaDetectionEnabled ? "、媒体推测" : "") + (_controller.GamepadDetectionEnabled ? "、手柄输入" : "") + "估算；空闲阈值为 " + _controller.IdleTimeoutMinutes + " 分钟。前台时长包含空闲。"
                     : "空闲过滤已关闭：之后记录的活跃时长与前台时长相同，仍只统计获得焦点的应用。";
-                DarkModeCheck.IsChecked = _controller.DarkMode;
+                ThemeSelector.SelectedValue = _controller.FollowSystemTheme ? "system" : _controller.DarkMode ? "dark" : "light";
                 TopmostCheck.IsChecked = _controller.AlwaysOnTop;
                 WidgetModeCheck.IsChecked = _controller.WidgetEnabled;
                 DataPathText.Text = _controller.DataDirectory;
@@ -154,8 +157,9 @@ namespace ScreenTime
                 SettingsPanel.Visibility = _page == "settings" ? Visibility.Visible : Visibility.Collapsed;
                 DateToolbar.Visibility = _page == "settings" ? Visibility.Collapsed : Visibility.Visible;
                 MetricToolbar.Visibility = _page == "settings" ? Visibility.Collapsed : Visibility.Visible;
-                SetDateButton(ActiveMetricButton, !_showRawForeground);
+                SetDateButton(ActiveMetricButton, !_showRawForeground && !_showVisible);
                 SetDateButton(ForegroundMetricButton, _showRawForeground);
+                SetDateButton(VisibleMetricButton, _showVisible);
                 SetDateButton(TodayButton, !_isWeek && _selectedDate == today);
                 SetDateButton(YesterdayButton, !_isWeek && _selectedDate == today.AddDays(-1));
                 SetDateButton(WeekButton, _isWeek);
@@ -168,6 +172,7 @@ namespace ScreenTime
                 }
                 else _summary = _controller.GetDay(_selectedDate);
                 var summary = _summary;
+                MetricHintText.Text = _showVisible ? "允许多应用并行累计；表示展示，不代表关注" : _showRawForeground ? "包括空闲；只计获得焦点的应用" : "扣除超出阈值的空闲，是活跃估计值";
                 if (_page == "apps") { RenderAllApps(summary.Apps); return; }
                 ScreenValue.Text = summary.HasData ? FormatDuration(summary.ScreenSeconds) : "—";
                 ForegroundValue.Text = summary.HasData ? FormatDuration(summary.ForegroundSeconds) : "—";
@@ -175,7 +180,6 @@ namespace ScreenTime
                 RawForegroundCaption.Text = summary.HasLegacyActivity ? "≥ 为旧记录可确认的下限" : "包括空闲 · 不含本软件";
                 RawForegroundValue.ToolTip = summary.HasLegacyActivity ? LegacyActivityExplanation : "应用获得前台焦点的累计时间，包括空闲，不含本软件。";
                 LockedValue.Text = summary.HasData ? "其中锁屏亮屏 " + FormatDuration(summary.LockedSeconds) : "屏幕亮着的时间";
-                MetricHintText.Text = _showRawForeground ? "包括空闲；只计获得焦点的应用" : "扣除超出阈值的空闲，是活跃估计值";
                 ChartMetricLegend.Text = MetricName;
                 MainChart.MetricLabel = MetricName;
                 MainChart.MetricIsLowerBound = _showRawForeground && summary.HasLegacyActivity;
@@ -183,8 +187,8 @@ namespace ScreenTime
                 {
                     ChartTitle.Text = "最近七天的使用分布";
                     ChartCaption.Text = RangeText() + " · 亮屏与" + MetricName + "时长";
-                    MainChart.SetData(_week.Select(d => d.ScreenSeconds).ToArray(), _week.Select(d => _showRawForeground ? d.RawForegroundSeconds : d.ForegroundSeconds).ToArray(),
-                        _week.Select(d => DateTime.TryParse(d.Date, out var date) ? date.ToString("M/d") : d.Date).ToArray(), summary.HasData);
+                    MainChart.SetData(_week.Select(d => d.ScreenSeconds).ToArray(), _week.Select(MetricTotal).ToArray(),
+                        _week.Select(d => DateTime.TryParse(d.Date, out var date) ? date.ToString("M/d") : d.Date).ToArray(), _showVisible ? summary.VisibilityObservedSeconds > 0 : summary.HasData);
                     SetWeekCoverage(MainChart, _week);
                     int valid = _week.Count(d => d.HasData);
                     CoverageText.Text = valid == 0 ? "这段时间还没有可用记录，灰纹表示未记录。" : "已记录 " + valid + "/7 天。灰纹为未记录或部分记录的日期，不能视为完整全天数据。";
@@ -194,8 +198,8 @@ namespace ScreenTime
                     ChartTitle.Text = "一天中的使用分布";
                     ChartCaption.Text = _selectedDate.ToString("M 月 d 日") + " · 亮屏与" + MetricName + "时长";
                     bool detail = summary.HasHourlyDetails;
-                    MainChart.SetData(summary.ScreenHourly, _showRawForeground ? summary.RawForegroundHourly : summary.ForegroundHourly, Enumerable.Range(0, 24).Select(i => i.ToString("00")).ToArray(), summary.HasData && detail,
-                        summary.HasData && !detail ? "小时明细已过保留期，仍可查看每日汇总" : "还没有记录，开始后时间会在这里呈现");
+                    MainChart.SetData(summary.ScreenHourly, _showVisible ? summary.VisibleHourly : _showRawForeground ? summary.RawForegroundHourly : summary.ForegroundHourly, Enumerable.Range(0, 24).Select(i => i.ToString("00")).ToArray(), (_showVisible ? summary.VisibilityObservedSeconds > 0 : summary.HasData) && detail,
+                        summary.HasData && !detail ? "小时明细已过保留期，仍可查看每日汇总" : _showVisible ? "此日期尚未采集可见时间，历史无法补算" : "还没有记录，开始后时间会在这里呈现");
                     if (detail) SetHourlyCoverage(MainChart, summary, _selectedDate);
                     else MainChart.SetCoverage(Array.Empty<double>(), Array.Empty<double>());
                     CoverageText.Text = !summary.HasData ? "无记录 · 首次启用前、暂停与未运行的区间不会补记为零使用。" :
@@ -203,6 +207,8 @@ namespace ScreenTime
                         (summary.HasGaps ? " · 数据不完整，灰纹为未记录/部分记录，浅底为未来时间。" : " · 仅汇总实际观测到的区间。");
                 }
                 if (summary.HasLegacyActivity) CoverageText.Text += " " + LegacyActivityExplanation;
+                if (_showVisible) CoverageText.Text = VisibilityExplanation + " 已采集窗口状态 " + FormatDuration(summary.VisibilityObservedSeconds) +
+                    (summary.VisibilityFirstRecorded.HasValue ? "，本范围首次采集 " + TimeZoneInfo.ConvertTimeBySystemTimeZoneId(summary.VisibilityFirstRecorded.Value, _controller.TimeZoneId).ToString("M/d HH:mm") : "；此范围暂无可见状态记录") + "。";
                 if (_page == "overview") RenderTopApps(summary.Apps);
             }
             catch (Exception ex)
@@ -215,13 +221,15 @@ namespace ScreenTime
 
         private static DaySummary Combine(List<DaySummary> days)
         {
-            var apps = days.SelectMany(d => d.Apps).GroupBy(a => a.AppId, StringComparer.OrdinalIgnoreCase).Select(g => new AppUsage { AppId = g.Key, Name = g.Last().Name, Seconds = g.Sum(a => a.Seconds), ForegroundSeconds = g.Sum(a => a.ForegroundSeconds), MediaSeconds = g.Sum(a => a.MediaSeconds), GamepadSeconds = g.Sum(a => a.GamepadSeconds) }).OrderByDescending(a => a.Seconds).ToList();
+            var apps = days.SelectMany(d => d.Apps).GroupBy(a => a.AppId, StringComparer.OrdinalIgnoreCase).Select(g => new AppUsage { AppId = g.Key, Name = g.Last().Name, Seconds = g.Sum(a => a.Seconds), ForegroundSeconds = g.Sum(a => a.ForegroundSeconds), VisibleSeconds = g.Sum(a => a.VisibleSeconds), MediaSeconds = g.Sum(a => a.MediaSeconds), GamepadSeconds = g.Sum(a => a.GamepadSeconds) }).OrderByDescending(a => a.Seconds).ToList();
             double foreground = days.Sum(d => d.ForegroundSeconds);
             foreach (var app in apps) app.Share = foreground > 0 ? app.Seconds / foreground : 0;
             return new DaySummary
             {
                 ScreenSeconds = days.Sum(d => d.ScreenSeconds), ForegroundSeconds = foreground, LockedSeconds = days.Sum(d => d.LockedSeconds),
                 RawForegroundSeconds = days.Sum(d => d.RawForegroundSeconds), HasLegacyActivity = days.Any(d => d.HasLegacyActivity),
+                VisibleSeconds = days.Sum(d => d.VisibleSeconds), VisibilityObservedSeconds = days.Sum(d => d.VisibilityObservedSeconds), VisibilityFirstRecorded = days.Min(d => d.VisibilityFirstRecorded),
+                VisibleHourly = SumHours(days.Select(d => d.VisibleHourly)), VisibilityObservedHourly = SumHours(days.Select(d => d.VisibilityObservedHourly)), AppVisibleHourly = SumAppHours(days.Select(d => d.AppVisibleHourly)),
                 ObservedSeconds = days.Sum(d => d.ObservedSeconds), UnknownSeconds = days.Sum(d => d.UnknownSeconds), Apps = apps,
                 ForegroundHourly = SumHours(days.Select(d => d.ForegroundHourly)), RawForegroundHourly = SumHours(days.Select(d => d.RawForegroundHourly)),
                 ScreenHourly = SumHours(days.Select(d => d.ScreenHourly)), ObservedHourly = SumHours(days.Select(d => d.ObservedHourly)), UnknownHourly = SumHours(days.Select(d => d.UnknownHourly)),
@@ -234,26 +242,28 @@ namespace ScreenTime
         private static double[] SumHours(IEnumerable<double[]> arrays) => Enumerable.Range(0, 24).Select(h => arrays.Sum(a => h < a.Length ? a[h] : 0)).ToArray();
         private static Dictionary<string, double[]> SumAppHours(IEnumerable<Dictionary<string, double[]>> maps) => maps.SelectMany(m => m)
             .GroupBy(p => p.Key, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => SumHours(g.Select(p => p.Value)), StringComparer.OrdinalIgnoreCase);
-        private string MetricName => _showRawForeground ? "前台" : "活跃";
-        private double AppSeconds(AppUsage app) => _showRawForeground ? app.ForegroundSeconds : app.Seconds;
+        private string MetricName => _showVisible ? "可见" : _showRawForeground ? "前台" : "活跃";
+        private double MetricTotal(DaySummary day) => _showVisible ? day.VisibleSeconds : _showRawForeground ? day.RawForegroundSeconds : day.ForegroundSeconds;
+        private double AppSeconds(AppUsage app) => _showVisible ? app.VisibleSeconds : _showRawForeground ? app.ForegroundSeconds : app.Seconds;
         private double AppShare(AppUsage app)
         {
-            double total = _showRawForeground ? _summary?.RawForegroundSeconds ?? 0 : _summary?.ForegroundSeconds ?? 0;
+            double total = _summary == null ? 0 : MetricTotal(_summary);
             return total > 0 ? AppSeconds(app) / total : 0;
         }
         public const string LegacyActivityExplanation = "包含旧版本记录：前台时长的“≥”表示已知下限，旧的空闲归属无法精确补算。";
+        public const string VisibilityExplanation = "可见时间按窗口范围估算，排除最小化、完全遮挡、其他虚拟桌面及只露出很小部分的窗口。同应用多窗口合并；不同应用可同时累计，总和可超过亮屏。包含无操作时段，不代表专注；透明及特殊窗口可能有误差。";
         public static string FormatForegroundDuration(double seconds, bool lowerBound) => (lowerBound ? "≥ " : "") + FormatDuration(seconds);
 
         private void RenderTopApps(List<AppUsage> apps)
         {
-            UpdateAppList(TopAppsHost, apps.OrderByDescending(AppSeconds).Take(5).ToList(), false, "应用使用记录会出现在这里", "开始记录后，试着切换几个软件。");
+            UpdateAppList(TopAppsHost, apps.Where(a => AppSeconds(a) > 0).OrderByDescending(AppSeconds).Take(5).ToList(), false, _showVisible ? "此范围暂无可见时间" : "应用使用记录会出现在这里", _showVisible ? "仅记录升级后采集到的窗口状态，历史无法补算。" : "开始记录后，试着切换几个软件。");
         }
 
         private void RenderAllApps(List<AppUsage> apps)
         {
             string search = SearchBox.Text?.Trim() ?? "";
             if (search != _lastAppSearch) { _appPage = 0; _lastAppSearch = search; }
-            var filtered = apps.Where(a => a.Name.Contains(search, StringComparison.CurrentCultureIgnoreCase)).OrderByDescending(AppSeconds).ToList();
+            var filtered = apps.Where(a => AppSeconds(a) > 0 && a.Name.Contains(search, StringComparison.CurrentCultureIgnoreCase)).OrderByDescending(AppSeconds).ToList();
             int pages = Math.Max(1, (filtered.Count + AppsPerPage - 1) / AppsPerPage);
             _appPage = Math.Clamp(_appPage, 0, pages - 1);
             AppPages.Visibility = pages > 1 ? Visibility.Visible : Visibility.Collapsed;
@@ -264,10 +274,11 @@ namespace ScreenTime
             AppCountText.Text = (search.Length > 0 ? "匹配 " + filtered.Count + " / " : "") + "共 " + apps.Count + " 个应用与系统条目 · 按" + MetricName + "时长排序";
             AppBarCaptionText.Text = RangeText() + " · " + MetricName + "时长 · " + (filtered.Count == 0 ? (search.Length > 0 ? "没有匹配的应用" : "暂无应用记录") : "显示前 " + Math.Min(AppUsageBarChart.MaximumRows, filtered.Count) + " 个");
             AppsBarChart.SetApps(filtered, search.Length > 0 ? "没有匹配的应用，试试其他名称。" : "这段时间还没有应用使用记录。开启记录后切换几个软件即可查看。",
-                _showRawForeground, _summary?.HasLegacyActivity == true, _showRawForeground ? _summary?.RawForegroundSeconds ?? 0 : _summary?.ForegroundSeconds ?? 0);
+                _showRawForeground, _summary?.HasLegacyActivity == true, _summary == null ? 0 : MetricTotal(_summary), _showVisible);
             AppBarCoverageText.Text = "柱条从零起按时长比较，占比按所选范围全部应用计算，不含本软件。点击柱条查看详情。" +
                 (_summary?.HasGaps == true ? " 仅含实际已记录区间，未记录时段不代表零使用。" : "") +
                 (_showRawForeground && _summary?.HasLegacyActivity == true ? " 前台柱条为已知下限，占比也仅按已知时长计算。" : "");
+            if (_showVisible) AppBarCoverageText.Text = VisibilityExplanation + " 占比按应用可见时间之和计算。已采集窗口状态 " + FormatDuration(_summary?.VisibilityObservedSeconds ?? 0) + "；旧记录无法补算。";
             UpdateAppList(AllAppsHost, filtered.Skip(_appPage * AppsPerPage).Take(AppsPerPage).ToList(), true, search.Length > 0 ? "没有找到匹配的应用" : "这段时间还没有应用记录", search.Length > 0 ? "试试其他名称。" : "开启记录后，前台软件会自动出现在这里。");
         }
         private void PreviousApps_Click(object sender, RoutedEventArgs e) { _appPage = Math.Max(0, _appPage - 1); Render(); }
@@ -377,8 +388,8 @@ namespace ScreenTime
             row.NameText.ToolTip = name;
             bool legacy = _summary?.HasLegacyActivity == true;
             row.Share = AppShare(app);
-            row.DurationText.Text = _showRawForeground ? FormatForegroundDuration(app.ForegroundSeconds, legacy) : FormatDuration(app.Seconds);
-            row.Button.ToolTip = name + "\n活跃 " + FormatDuration(app.Seconds) + "\n前台 " + FormatForegroundDuration(app.ForegroundSeconds, legacy) + "\n点击查看详情" + (legacy ? "\n" + LegacyActivityExplanation : "");
+            row.DurationText.Text = _showRawForeground ? FormatForegroundDuration(app.ForegroundSeconds, legacy) : FormatDuration(AppSeconds(app));
+            row.Button.ToolTip = name + "\n活跃 " + FormatDuration(app.Seconds) + "\n前台 " + FormatForegroundDuration(app.ForegroundSeconds, legacy) + "\n可见 " + FormatDuration(app.VisibleSeconds) + "\n点击查看详情" + (legacy ? "\n" + LegacyActivityExplanation : "");
             if (row.PercentText != null) row.PercentText.Text = row.Share.ToString("P0", CultureInfo.CurrentCulture);
             if (row.Fill != null) row.Fill.Background = Brush(color);
             UpdateProgress(row);
@@ -426,14 +437,14 @@ namespace ScreenTime
             DateTime now = StatisticsNow();
             bool[] future = Enumerable.Range(0, 24).Select(h => date.Date > now.Date || (date.Date == now.Date && h > now.Hour)).ToArray();
             double[] expected = Enumerable.Range(0, 24).Select(h => date.Date < now.Date ? 3600d : date.Date > now.Date ? 0d : Math.Clamp(now.TimeOfDay.TotalSeconds - h * 3600, 0, 3600)).ToArray();
-            chart.SetCoverage(day.ObservedHourly, day.UnknownHourly, future, expected);
+            chart.SetCoverage(_showVisible ? day.VisibilityObservedHourly : day.ObservedHourly, _showVisible ? Array.Empty<double>() : day.UnknownHourly, future, expected);
         }
 
         private void SetWeekCoverage(UsageChart chart, List<DaySummary> days)
         {
             DateTime now = StatisticsNow();
             DateTime[] dates = days.Select(d => DateTime.TryParse(d.Date, out var date) ? date.Date : now.Date).ToArray();
-            chart.SetCoverage(days.Select(d => d.ObservedSeconds).ToArray(), days.Select(d => d.UnknownSeconds).ToArray(), dates.Select(d => d > now.Date).ToArray(),
+            chart.SetCoverage(days.Select(d => _showVisible ? d.VisibilityObservedSeconds : d.ObservedSeconds).ToArray(), days.Select(d => _showVisible ? 0 : d.UnknownSeconds).ToArray(), dates.Select(d => d > now.Date).ToArray(),
                 dates.Select(d => d < now.Date ? 86400d : d > now.Date ? 0d : now.TimeOfDay.TotalSeconds).ToArray());
         }
 
@@ -452,6 +463,7 @@ namespace ScreenTime
                 panel.Children.Add(new TextBlock { Text = range, Foreground = Brush("#929AAF"), FontSize = 11, Margin = new Thickness(0, 9, 0, 12) });
                 panel.Children.Add(new TextBlock { Text = "活跃 " + FormatDuration(selectedApp.Seconds), FontSize = 21, Foreground = Brush("#5854E8"), FontWeight = FontWeights.SemiBold });
                 panel.Children.Add(new TextBlock { Text = "前台 " + FormatForegroundDuration(selectedApp.ForegroundSeconds, selected.HasLegacyActivity) + " · 包含空闲", FontSize = 13, Margin = new Thickness(0, 7, 0, 0) });
+                panel.Children.Add(new TextBlock { Text = selected.VisibilityObservedSeconds > 0 ? "可见 " + FormatDuration(selectedApp.VisibleSeconds) + " · 多窗口并行估算" : "可见时间：尚未采集，历史无法补算", FontSize = 13, Margin = new Thickness(0, 7, 0, 0) });
                 panel.Children.Add(new TextBlock { Text = "其中补充计时：媒体推测 " + FormatDuration(selectedApp.MediaSeconds) + " · 手柄输入 " + FormatDuration(selectedApp.GamepadSeconds) + "\n这些区间已包含在活跃时长中，不重复累加。媒体推测不能证明本人在场。", FontSize = 11, Foreground = Brush("#929AAF"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 9, 0, 0) });
                 if (selected.HasLegacyActivity) panel.Children.Add(new TextBlock { Text = LegacyActivityExplanation, FontSize = 10, Foreground = Brush("#929AAF"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) });
                 panel.Children.Add(new TextBlock { Text = "此应用的空闲规则", FontSize = 12, Margin = new Thickness(0, 20, 0, 8) });
@@ -476,10 +488,10 @@ namespace ScreenTime
                 panel.Children.Add(new TextBlock { Text = selectedDate.ToString("M 月 d 日") + " · " + MetricName + "时长 · 按小时查看", FontSize = 12, Margin = new Thickness(0, 24, 0, 10) });
                 if (day.HasHourlyDetails)
                 {
-                    var hours = _showRawForeground ? day.AppForegroundHourly : day.AppHourly;
+                    var hours = _showVisible ? day.AppVisibleHourly : _showRawForeground ? day.AppForegroundHourly : day.AppHourly;
                     double[] hourly = hours.TryGetValue(app.AppId, out var appHours) ? appHours : new double[24];
                     var dayChart = new UsageChart { Height = 142, ForegroundOnly = true, MetricLabel = MetricName, MetricIsLowerBound = _showRawForeground && day.HasLegacyActivity };
-                    dayChart.SetData(Array.Empty<double>(), hourly, Enumerable.Range(0, 24).Select(h => h.ToString("00")).ToArray(), day.HasData, "该日期未记录，不能视为零使用");
+                    dayChart.SetData(Array.Empty<double>(), hourly, Enumerable.Range(0, 24).Select(h => h.ToString("00")).ToArray(), _showVisible ? day.VisibilityObservedSeconds > 0 : day.HasData, "该日期未记录此指标，不能视为零使用");
                     SetHourlyCoverage(dayChart, day, selectedDate);
                     panel.Children.Add(dayChart);
                 }
@@ -487,7 +499,7 @@ namespace ScreenTime
                 panel.Children.Add(new TextBlock { Text = "最近七天 · " + MetricName + "时长", FontSize = 12, Margin = new Thickness(0, 24, 0, 10) });
                 var chart = new UsageChart { Height = 125, ForegroundOnly = true, MetricLabel = MetricName, MetricIsLowerBound = _showRawForeground && days.Any(d => d.HasLegacyActivity) };
                 double[] values = days.Select(d => d.Apps.Where(a => string.Equals(a.AppId, app.AppId, StringComparison.OrdinalIgnoreCase)).Sum(AppSeconds)).ToArray();
-                chart.SetData(Array.Empty<double>(), values, days.Select(d => DateTime.TryParse(d.Date, out var dt) ? dt.ToString("M/d") : d.Date).ToArray(), days.Any(d => d.HasData));
+                chart.SetData(Array.Empty<double>(), values, days.Select(d => DateTime.TryParse(d.Date, out var dt) ? dt.ToString("M/d") : d.Date).ToArray(), days.Any(d => _showVisible ? d.VisibilityObservedSeconds > 0 : d.HasData));
                 SetWeekCoverage(chart, days);
                 panel.Children.Add(chart);
                 panel.Children.Add(new TextBlock { Text = "前台时长包含空闲；活跃时长按记录时的空闲规则估算。灰纹为未记录/部分记录，浅底为未来时间，均不能解释为零使用。", Foreground = Brush("#9CA4B6"), FontSize = 10, Margin = new Thickness(0, 17, 0, 0), TextWrapping = TextWrapping.Wrap });
@@ -515,8 +527,11 @@ namespace ScreenTime
         private void Today_Click(object sender, RoutedEventArgs e) => SelectDate(_controller.Today, false);
         private void Yesterday_Click(object sender, RoutedEventArgs e) => SelectDate(_controller.Today.AddDays(-1), false);
         private void Week_Click(object sender, RoutedEventArgs e) => SelectDate(_controller.Today, true);
-        private void ActiveMetric_Click(object sender, RoutedEventArgs e) { _showRawForeground = false; Render(); }
-        private void ForegroundMetric_Click(object sender, RoutedEventArgs e) { _showRawForeground = true; Render(); }
+        private void ActiveMetric_Click(object sender, RoutedEventArgs e) { _showVisible = false; _showRawForeground = false; _appPage = 0; Render(); }
+        private void ForegroundMetric_Click(object sender, RoutedEventArgs e) { _showVisible = false; _showRawForeground = true; _appPage = 0; Render(); }
+        private void VisibleMetric_Click(object sender, RoutedEventArgs e) { _showVisible = true; _showRawForeground = false; _appPage = 0; Render(); }
+        private void Background_Click(object sender, RoutedEventArgs e) => Safe(() => BackgroundRequested?.Invoke());
+        private void VisibilityDetection_Changed(object sender, RoutedEventArgs e) { if (_ready && !_rendering) Safe(() => _controller.VisibilityDetectionEnabled = VisibilityDetectionCheck.IsChecked == true); }
         private void SelectDate(DateTime date, bool week) { _selectedDate = date.Date; _isWeek = week; _followToday = week || _selectedDate == _controller.Today; _ready = false; DateSelector.SelectedDate = _selectedDate; _ready = true; Render(); }
         private void Date_Changed(object? sender, SelectionChangedEventArgs e) { if (_ready && !_rendering && DateSelector.SelectedDate.HasValue) { _selectedDate = DateSelector.SelectedDate.Value.Date; _isWeek = false; _followToday = _selectedDate == _controller.Today; Render(); } }
         private void Collapse_Click(object sender, RoutedEventArgs e) => Safe(() => WidgetRequested?.Invoke());
@@ -539,7 +554,16 @@ namespace ScreenTime
             if (_ready && !_rendering && int.TryParse(IdleTimeoutSelector.SelectedValue as string, out int minutes))
                 Safe(() => _controller.IdleTimeoutMinutes = minutes);
         }
-        private void DarkMode_Changed(object sender, RoutedEventArgs e) { if (_ready && !_rendering) Safe(() => _controller.DarkMode = DarkModeCheck.IsChecked == true); }
+        private void Theme_Changed(object sender, SelectionChangedEventArgs e)
+        {
+            if (!_ready || _rendering) return;
+            Safe(() =>
+            {
+                string? mode = ThemeSelector.SelectedValue as string;
+                if (mode == "system") _controller.FollowSystemTheme = true;
+                else if (mode is "light" or "dark") _controller.DarkMode = mode == "dark";
+            });
+        }
         private void Topmost_Changed(object sender, RoutedEventArgs e) { if (_ready && !_rendering) Safe(() => _controller.AlwaysOnTop = TopmostCheck.IsChecked == true); }
         private void Exit_Click(object sender, RoutedEventArgs e) => _controller.Exit();
         private void Refresh_Click(object sender, RoutedEventArgs e) => Safe(() => { _controller.Refresh(); Render(); });

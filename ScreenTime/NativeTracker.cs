@@ -30,6 +30,9 @@ public sealed class NativeTracker : IDisposable
     private bool _handlingForeground;
     private IMediaSessionMonitor? _media;
     private readonly GamepadMonitor _gamepad;
+    private WindowVisibilityMonitor? _visibility;
+    private bool _visibilityEnabled;
+    public event Action<VisibleInterval>? VisibleReady;
     private HashSet<string> _playingSources = new(StringComparer.OrdinalIgnoreCase);
     private string? _foregroundPath, _foregroundAumid;
     private bool _mediaMatched;
@@ -124,7 +127,7 @@ public sealed class NativeTracker : IDisposable
         $"idleFilter={_idleFilterEnabled}; idleTimeoutMinutes={EffectiveIdleTimeoutMinutes}; " +
         $"inputIdleSeconds={InputIdleSeconds?.ToString("F1") ?? "unknown"}; " +
         $"foregroundDelayMs={LastForegroundEventDelayMilliseconds?.ToString("F1") ?? "unknown"}; " +
-        $"lateEvents={_lateEventCount}; timing={TimingDiagnostic}; media={_media?.Status ?? "off"}; mediaMatched={_mediaMatched}; gamepad={_gamepad.Status}";
+        $"lateEvents={_lateEventCount}; timing={TimingDiagnostic}; media={_media?.Status ?? "off"}; mediaMatched={_mediaMatched}; gamepad={_gamepad.Status}; visibility={_visibility?.Status ?? "off"}; visibilitySamples={_visibility?.Samples ?? 0}";
 
     /// <summary>For local icon extraction only. Paths are never added to usage segments or files.</summary>
     public string? GetApplicationPath(string appId)
@@ -135,10 +138,11 @@ public sealed class NativeTracker : IDisposable
     }
 
     public NativeTracker(IntPtr hwnd, bool idleFilterEnabled = true, int idleTimeoutMinutes = 5,
-        IReadOnlyDictionary<string, int>? idleOverrides = null)
+        IReadOnlyDictionary<string, int>? idleOverrides = null, bool visibilityEnabled = true)
     {
         if (hwnd == IntPtr.Zero) throw new ArgumentException("需要有效窗口句柄。", nameof(hwnd));
         _hwnd = hwnd;
+        _visibilityEnabled = visibilityEnabled;
         _idleFilterEnabled = idleFilterEnabled;
         ValidateTimeout(idleTimeoutMinutes, false);
         _idleTimeoutMinutes = idleTimeoutMinutes;
@@ -176,6 +180,14 @@ public sealed class NativeTracker : IDisposable
             _media.SetEnabled(false);
             _media.Dispose(); _media = null;
         }
+    }
+    public void SetVisibilityDetection(bool enabled)
+    {
+        if (_visibilityEnabled == enabled) return;
+        if (_started) Commit();
+        _visibilityEnabled = enabled;
+        if (!enabled) { _visibility?.Dispose(); _visibility = null; }
+        if (_started) Capture();
     }
     private void MediaChanged(HashSet<string> sources)
     {
@@ -388,7 +400,25 @@ public sealed class NativeTracker : IDisposable
         }
         if (previous != _snapshot) _gamepadInputStamp = null;
         MatchMedia();
+        if (_visibilityEnabled)
+        {
+            bool enabled = _snapshot.Kind is "app" or UsageRules.ScreenOnlyKind;
+            if (enabled) _visibility ??= new WindowVisibilityMonitor();
+            _visibility?.Update(enabled, ResolveVisibleApp);
+        }
         if (previous != _snapshot) StateChanged?.Invoke();
+    }
+
+    private VisibleApp? ResolveVisibleApp(IntPtr window)
+    {
+        // Identity resolution shares the existing bounded metadata cache, without replacing media ownership.
+        string? path = _foregroundPath, aumid = _foregroundAumid;
+        try
+        {
+            var app = ResolveForeground(window);
+            return app.Id is "system-desktop" or "unknown-app" or UsageRules.SelfAppId ? null : new VisibleApp(app.Id, app.Name);
+        }
+        finally { _foregroundPath = path; _foregroundAumid = aumid; }
     }
 
     private void Commit(bool forceGap = false)
@@ -420,6 +450,8 @@ public sealed class NativeTracker : IDisposable
         // Dispatcher stalls / sleep / debugging are not evidence that the last
         // foreground application stayed in front. Never backfill those gaps.
         bool gap = forceGap || elapsed > 3.5 || wallClockChanged;
+        if (!gap && _visibility?.Available == true && _snapshot.Kind is "app" or UsageRules.ScreenOnlyKind)
+            VisibleReady?.Invoke(new VisibleInterval(start, end, elapsed, _visibility.Apps));
         var segment = new UsageSegment
         {
             Start = start,
@@ -693,9 +725,14 @@ public sealed class NativeTracker : IDisposable
         if (process == IntPtr.Zero) return null;
         try
         {
-            int capacity = 32768;
-            StringBuilder path = new(capacity);
-            return NativeMethods.QueryFullProcessImageName(process, 0, path, ref capacity) ? path.ToString() : null;
+            for (int size = 1024; size <= 32768; size *= 2)
+            {
+                int capacity = size;
+                StringBuilder path = new(capacity);
+                if (NativeMethods.QueryFullProcessImageName(process, 0, path, ref capacity)) return path.ToString();
+                if (Marshal.GetLastWin32Error() != 122) return null;
+            }
+            return null;
         }
         finally { NativeMethods.CloseHandle(process); }
     }
@@ -731,6 +768,7 @@ public sealed class NativeTracker : IDisposable
             _started = false;
             _disposed = true;
             _media?.Dispose();
+            _visibility?.Dispose();
             _gamepad.Dispose();
             if (_powerNotification != IntPtr.Zero)
             {

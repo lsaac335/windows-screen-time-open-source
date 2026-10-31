@@ -4,7 +4,7 @@
         xmlns:local="clr-namespace:ScreenTime"
         Title="屏幕时间 · 桌面组件" Width="360" Height="324"
         WindowStyle="None" ResizeMode="NoResize" AllowsTransparency="True"
-        Background="Transparent" ShowInTaskbar="True" ShowActivated="False"
+        Background="Transparent" ShowInTaskbar="False" ShowActivated="False"
         WindowStartupLocation="Manual" UseLayoutRounding="True"
         TextOptions.TextFormattingMode="Display">
     <Window.Resources>

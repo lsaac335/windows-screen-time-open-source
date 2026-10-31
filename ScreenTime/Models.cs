@@ -31,6 +31,7 @@ public class AppUsage
     public double ForegroundSeconds { get; set; }
     public double MediaSeconds { get; set; }
     public double GamepadSeconds { get; set; }
+    public double VisibleSeconds { get; set; }
     public double Share { get; set; }
 }
 
@@ -55,6 +56,12 @@ public class DaySummary
     public Dictionary<string, double[]> AppHourly { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, double[]> AppForegroundHourly { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public bool HasData { get; set; }
+    public double VisibleSeconds { get; set; }
+    public double VisibilityObservedSeconds { get; set; }
+    public DateTimeOffset? VisibilityFirstRecorded { get; set; }
+    public double[] VisibleHourly { get; set; } = new double[24];
+    public double[] VisibilityObservedHourly { get; set; } = new double[24];
+    public Dictionary<string, double[]> AppVisibleHourly { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public bool HasGaps { get; set; }
     public bool HasHourlyDetails { get; set; } = true;
 }

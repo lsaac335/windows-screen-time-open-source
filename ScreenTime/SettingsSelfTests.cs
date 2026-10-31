@@ -20,6 +20,8 @@ public static class SettingsSelfTests
         }
 
         var fresh = AppSettings.Load(path);
+        Check(fresh.FollowSystemTheme, "new settings follow the Windows app theme");
+        Check(fresh.VisibilityDetectionEnabled, "multi-window visibility is enabled independently by default");
         Check(!fresh.MediaDetectionEnabled && !fresh.GamepadDetectionEnabled, "optional media and controller sampling are off by default");
         Check(fresh.AutoRecord && fresh.DarkMode, "new settings default to automatic recording and dark mode");
         Check(fresh.AutoStartWidget && fresh.IdleFilterEnabled, "new settings enable login widget display and idle filtering");
@@ -33,10 +35,14 @@ public static class SettingsSelfTests
         const string oldJson = "{\"RecordingEnabled\":true,\"Paused\":true,\"CreatedVersion\":\"0.1.0\"}";
         File.WriteAllText(path, oldJson);
         var migrated = AppSettings.Load(path);
+        Check(migrated.FollowSystemTheme, "legacy settings gain system-following appearance without losing manual fallback");
+        Check(migrated.VisibilityDetectionEnabled, "existing settings gain the independent visibility metric");
         Check(!migrated.MediaDetectionEnabled && !migrated.GamepadDetectionEnabled, "legacy settings receive optional activity evidence defaults");
         var evidenceSettings = new AppSettings { MediaDetectionEnabled = false, GamepadDetectionEnabled = true };
         evidenceSettings.Save(path);
         var evidenceReload = AppSettings.Load(path);
+        evidenceSettings.VisibilityDetectionEnabled = false; evidenceSettings.Save(path);
+        Check(!AppSettings.Load(path).VisibilityDetectionEnabled, "visibility opt-out survives relaunch");
         Check(!evidenceReload.MediaDetectionEnabled && evidenceReload.GamepadDetectionEnabled, "evidence preferences persist independently");
         File.WriteAllText(path, oldJson);
         Check(migrated.AutoRecord && migrated.DarkMode, "old JSON missing new fields receives enabled defaults");
@@ -51,6 +57,10 @@ public static class SettingsSelfTests
         File.WriteAllText(path, "{\"AutoRecord\":false,\"DarkMode\":false,\"RecordingEnabled\":true,\"Paused\":false}");
         var disabled = AppSettings.Load(path);
         Check(!disabled.AutoRecord && !disabled.DarkMode, "explicit disabled choices are not replaced by defaults");
+        disabled.FollowSystemTheme = false; disabled.Save(path);
+        Check(!AppSettings.Load(path).FollowSystemTheme && !AppSettings.Load(path).DarkMode, "manual light preference persists independently of system mode");
+        disabled.FollowSystemTheme = true; disabled.Save(path);
+        Check(AppSettings.Load(path).FollowSystemTheme && !AppSettings.Load(path).DarkMode, "following system preserves the stored manual fallback");
 
         foreach (bool automatic in new[] { false, true })
         foreach (bool dark in new[] { false, true })

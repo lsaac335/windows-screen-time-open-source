@@ -44,10 +44,10 @@ public sealed class AppUsageBarChart : UserControl
     }
 
     public void SetApps(IReadOnlyList<AppUsage> apps, string emptyMessage, bool showForeground = false,
-        bool foregroundIsLowerBound = false, double? totalSeconds = null)
+        bool foregroundIsLowerBound = false, double? totalSeconds = null, bool showVisible = false)
     {
-        double Seconds(AppUsage app) => showForeground ? app.ForegroundSeconds : app.Seconds;
-        string metric = showForeground ? "前台" : "活跃";
+        double Seconds(AppUsage app) => showVisible ? app.VisibleSeconds : showForeground ? app.ForegroundSeconds : app.Seconds;
+        string metric = showVisible ? "可见" : showForeground ? "前台" : "活跃";
         bool lowerBound = showForeground && foregroundIsLowerBound;
         double total = totalSeconds ?? apps.Sum(Seconds);
         var shown = apps.OrderByDescending(Seconds).ThenBy(a => a.Name, StringComparer.CurrentCulture)
@@ -77,6 +77,7 @@ public sealed class AppUsageBarChart : UserControl
             row.FillColumn.Width = new GridLength(fraction, GridUnitType.Star);
             row.RemainderColumn.Width = new GridLength(1 - fraction, GridUnitType.Star);
             string description = name + "\n活跃 " + MainWindow.FormatDuration(app.Seconds) +
+                "\n可见 " + MainWindow.FormatDuration(app.VisibleSeconds) +
                 "\n前台 " + MainWindow.FormatForegroundDuration(app.ForegroundSeconds, foregroundIsLowerBound) +
                 "\n占所选范围应用" + metric + "时长 " + share.ToString("P1", CultureInfo.CurrentCulture) + "\n点击查看详情" +
                 (foregroundIsLowerBound ? "\n" + MainWindow.LegacyActivityExplanation : "");

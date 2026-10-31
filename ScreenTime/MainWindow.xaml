@@ -94,7 +94,7 @@
                         <TextBlock Text="只属于你的记录" Foreground="#D7DDF0" FontSize="11"/>
                         <TextBlock Text="本地保存 · 无需登录" Foreground="{DynamicResource SidebarMuted}" FontSize="10" Margin="0,7,0,0"/>
                         <Border Height="1" Background="{DynamicResource Line}" Margin="0,14,0,11"/>
-                        <TextBlock Text="Windows  ·  版本 0.4.0" Foreground="{DynamicResource SidebarMuted}" FontSize="10"/>
+                        <TextBlock Text="Windows  ·  版本 0.5.1" Foreground="{DynamicResource SidebarMuted}" FontSize="10"/>
                     </StackPanel>
                 </Border>
             </Grid>
@@ -144,7 +144,8 @@
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <TextBlock Text="图表与排行" FontSize="11" Foreground="{DynamicResource Muted}" VerticalAlignment="Center" Margin="0,0,12,0"/>
                         <Button x:Name="ActiveMetricButton" Content="活跃时长" Style="{StaticResource RoundButton}" Click="ActiveMetric_Click" Margin="0,0,7,0"/>
-                        <Button x:Name="ForegroundMetricButton" Content="前台时长" Style="{StaticResource RoundButton}" Click="ForegroundMetric_Click"/>
+                        <Button x:Name="ForegroundMetricButton" Content="前台时长" Style="{StaticResource RoundButton}" Click="ForegroundMetric_Click" Margin="0,0,7,0"/>
+                        <Button x:Name="VisibleMetricButton" Content="可见时长" Style="{StaticResource RoundButton}" Click="VisibleMetric_Click"/>
                     </StackPanel>
                     <TextBlock Grid.Column="1" x:Name="MetricHintText" FontSize="10" Foreground="{DynamicResource Secondary}" VerticalAlignment="Center" TextWrapping="Wrap" Margin="16,0,0,0"/>
                 </Grid>
@@ -217,9 +218,9 @@
                 <StackPanel x:Name="SettingsPanel" Visibility="Collapsed">
                     <Border Style="{StaticResource Card}" Margin="0,0,0,16"><StackPanel>
                         <TextBlock Text="关于屏幕时间" FontSize="15" FontWeight="SemiBold"/>
-                        <TextBlock Text="屏幕时间是一款本地运行的 Windows 使用时间统计工具。它记录屏幕亮起的时间和各应用的前台使用时长，帮助你了解时间花在哪里。" Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap" LineHeight="21" Margin="0,16,0,0"/>
+                        <TextBlock Text="屏幕时间是一款本地运行的 Windows 使用时间统计工具。它记录亮屏、应用前台与活跃时间，并通过可见时间补充并排窗口和多显示器场景，帮助你了解时间花在哪里。" Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap" LineHeight="21" Margin="0,16,0,0"/>
                         <TextBlock Text="支持日期与近七天统计、应用柱状图、桌面小组件、空闲过滤和 CSV 导出。数据保存在本机，不读取窗口标题、网页地址或按键内容。" Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap" LineHeight="21" Margin="0,10,0,0"/>
-                        <TextBlock Text="版本 0.4.0 · 开源许可：MIT" Foreground="{DynamicResource Secondary}" FontSize="10" Margin="0,12,0,0"/>
+                        <TextBlock Text="版本 0.5.1 · 开源许可：MIT" Foreground="{DynamicResource Secondary}" FontSize="10" Margin="0,12,0,0"/>
                     </StackPanel></Border>
                     <Border Style="{StaticResource Card}" Margin="0,0,0,16"><StackPanel>
                         <TextBlock Text="常驻与启动" FontSize="15" FontWeight="SemiBold"/>
@@ -228,14 +229,22 @@
                         <TextBlock Text="默认开启；登录后直接显示小组件。关闭则只在托盘运行。需同时开启上方的开机自启。" Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8"/>
                         <CheckBox x:Name="AutoRecordCheck" Content="打开软件自动开始记录" FontSize="12" Margin="0,12,0,8" Checked="AutoRecord_Changed" Unchecked="AutoRecord_Changed"/>
                         <TextBlock Text="下次启动生效。关闭后，打开软件会等待你手动开始；开机自启与此选项互相独立。" Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,16"/>
-                        <CheckBox x:Name="DarkModeCheck" Content="深色模式" FontSize="12" Margin="0,5,0,14" Checked="DarkMode_Changed" Unchecked="DarkMode_Changed"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,5,0,14">
+                            <TextBlock Text="外观" FontSize="12" VerticalAlignment="Center" Margin="0,0,20,0"/>
+                            <ComboBox x:Name="ThemeSelector" Style="{StaticResource IdleRuleSelector}" Width="180" Height="32" SelectedValuePath="Tag" SelectionChanged="Theme_Changed" AutomationProperties.Name="外观主题">
+                                <ComboBoxItem Content="跟随系统" Tag="system"/><ComboBoxItem Content="浅色" Tag="light"/><ComboBoxItem Content="深色" Tag="dark"/>
+                            </ComboBox>
+                        </StackPanel>
                         <CheckBox x:Name="TopmostCheck" Content="完整面板始终置顶" FontSize="12" Margin="0,5,0,16" Checked="Topmost_Changed" Unchecked="Topmost_Changed"/>
                         <CheckBox x:Name="WidgetModeCheck" Content="桌面小组件" FontSize="12" Margin="0,5,0,10" Checked="WidgetMode_Changed" Unchecked="WidgetMode_Changed"/>
-                        <TextBlock Text="在桌面显示精简卡片；双击打开完整面板，右键可锁定位置或切换悬浮置顶。" Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,16"/>
+                        <TextBlock Text="在桌面显示精简卡片，不显示任务栏图标；双击打开完整面板，右键可锁定位置或切换悬浮置顶。托盘菜单可重新唤出组件。" Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,16"/>
+                        <Button Content="隐藏窗口，后台记录" Style="{StaticResource RoundButton}" HorizontalAlignment="Left" Click="Background_Click" Margin="0,0,0,14"/>
                         <TextBlock Text="关闭主窗口后仍在托盘记录。要停止后台运行，请在托盘菜单选择“退出”。&#10;手动暂停对本次运行有效，下次是否记录由“自动开始记录”决定。" Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap" LineHeight="22"/>
                     </StackPanel></Border>
                     <Border Style="{StaticResource Card}" Margin="0,0,0,16"><StackPanel>
                         <TextBlock Text="应用计时" FontSize="15" FontWeight="SemiBold"/>
+                        <CheckBox x:Name="VisibilityDetectionCheck" Content="统计多个窗口的可见时间" FontSize="12" Margin="0,18,0,8" Checked="VisibilityDetection_Changed" Unchecked="VisibilityDetection_Changed"/>
+                        <TextBlock Text="单独统计解锁亮屏时的窗口展示时间，不受空闲过滤影响；同应用多窗口合并，不同应用允许并行。仅保存小时累计，不保存画面或窗口标题。关闭后释放相关监听，已有记录保留。" Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap" LineHeight="21"/>
                         <CheckBox x:Name="IdleFilterCheck" Content="从活跃时长中排除空闲" FontSize="12" Margin="0,20,0,10" Checked="IdleFilter_Changed" Unchecked="IdleFilter_Changed"/>
                         <StackPanel Orientation="Horizontal" Margin="0,2,0,12">
                             <TextBlock Text="连续无操作" FontSize="11" VerticalAlignment="Center" Margin="0,0,12,0"/>
@@ -264,7 +273,7 @@
                         <TextBlock Text="这些数字意味着什么" FontSize="15" FontWeight="SemiBold"/>
                         <TextBlock Text="亮屏时长：Windows 报告显示处于开启或变暗的时间，包含锁屏亮屏，多屏不叠加。&#10;&#10;前台时长：解锁且亮屏时，应用获得前台焦点的时间，包含空闲；查看本软件时只累计亮屏。后台音乐、下载和并排但未获焦点的窗口不重复累计。&#10;&#10;活跃时长：按记录时的空闲设置，从前台时长中扣除超过阈值的无操作区间。它是估计值，阅读、视频和手柄操作可能被判为空闲。&#10;&#10;旧版本记录未保留空闲时的应用归属。包含旧记录时，前台时长显示“≥”，表示至少已有这么长，不能精确补算。&#10;&#10;未记录：暂停、程序未运行或状态未知的区间，不能解释为零使用。首次启用前的历史无法追溯。外接显示器的物理电源状态可能与系统报告存在差异。" FontSize="11" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" LineHeight="21" Margin="0,18,0,0"/>
                         <Border Height="1" Background="{DynamicResource Line}" Margin="0,22,0,15"/>
-                        <TextBlock Text="屏幕时间 0.4.0 · 本地优先的 Windows 使用记录" Foreground="{DynamicResource Secondary}" FontSize="10"/>
+                        <TextBlock Text="屏幕时间 0.5.1 · 本地优先的 Windows 使用记录" Foreground="{DynamicResource Secondary}" FontSize="10"/>
                         <Button Content="退出程序" Style="{StaticResource RoundButton}" HorizontalAlignment="Left" Margin="0,15,0,0" Click="Exit_Click" ToolTip="停止记录并退出（Ctrl+Q）"/>
                     </StackPanel></Border>
                 </StackPanel>
