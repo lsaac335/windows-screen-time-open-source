@@ -1,5 +1,7 @@
 # 屏幕时间 ScreenTime
 
+[简体中文](README.md) | [English](README.en.md)
+
 一款本地运行的 Windows 屏幕时间统计工具，记录亮屏、应用前台、活跃和多窗口可见时长。当前版本 **0.5.1**。
 
 [下载 Windows x64 版](https://github.com/lsaac335/windows-screen-time-open-source/releases/tag/v0.5.1) · [使用说明](使用说明.md)
@@ -64,3 +66,7 @@ dotnet run --project tests/CoreTests/CoreTests.csproj -c Release
 ## 开源许可
 
 本项目采用 [MIT License](LICENSE)。
+
+## 参与贡献
+
+欢迎提交问题、功能建议、文档改进和代码修改。可以 Fork 本仓库，在自己的副本中新建分支，完成修改后向本仓库 `main` 提交 Pull Request，由维护者审核合并。具体步骤见 [贡献指南 / Contributing](CONTRIBUTING.md)。
