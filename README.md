@@ -2,9 +2,9 @@
 
 [简体中文](README.md) | [English](README.en.md)
 
-一款本地运行的 Windows 屏幕时间统计工具，记录亮屏、应用前台、活跃和多窗口可见时长。当前版本 **0.5.1**。
+一款本地运行的 Windows 屏幕时间统计工具，记录亮屏、应用前台、活跃和多窗口可见时长。当前版本 **0.5.2**。
 
-[下载 Windows x64 版](https://github.com/lsaac335/windows-screen-time-open-source/releases/tag/v0.5.1) · [使用说明](使用说明.md)
+[下载 Windows x64 版](https://github.com/lsaac335/windows-screen-time-open-source/releases/tag/v0.5.2) · [使用说明](使用说明.md)
 
 ![屏幕时间 ScreenTime 界面示意：亮屏时间、应用使用时间与每日分布](docs/images/overview.svg)
 
@@ -43,7 +43,7 @@
 
 ## 下载使用
 
-从 [v0.5.1 发布页](https://github.com/lsaac335/windows-screen-time-open-source/releases/tag/v0.5.1) 下载 Windows x64 压缩包，解压后运行 `ScreenTime.exe`。请保留同目录 DLL 和运行配置，不要只复制 EXE。需要 Windows Desktop Runtime 8 或兼容版本。
+从 [v0.5.2 发布页](https://github.com/lsaac335/windows-screen-time-open-source/releases/tag/v0.5.2) 下载 Windows x64 压缩包，解压后运行 `ScreenTime.exe`。请保留同目录 DLL 和运行配置，不要只复制 EXE。需要 Windows Desktop Runtime 8 或兼容版本。
 
 升级前退出旧程序并备份 `data`，替换程序文件时保留原 `data` 目录。发布包不包含使用记录或账户信息。
 

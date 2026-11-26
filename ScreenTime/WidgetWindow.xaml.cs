@@ -134,11 +134,11 @@ public partial class WidgetWindow : Window
         try
         {
             ThemeManager.Apply(this, _controller.DarkMode);
-            Background = Brushes.Transparent;
             var day = _controller.GetDay(_controller.Today);
             WidgetDate.Text = _controller.Today.ToString("M月d日", CultureInfo.GetCultureInfo("zh-CN"));
             WidgetScreen.Text = day.HasData ? ShortDuration(day.ScreenSeconds) : "—";
-            WidgetForeground.Text = day.HasData ? ShortDuration(day.ForegroundSeconds) : "—";
+            DurationTypography.Set(WidgetForeground, day.HasData ? ShortDuration(day.ForegroundSeconds) : "—");
+            WidgetRing.SetUsage(day.ForegroundSeconds, day.ScreenSeconds, day.HasData);
             WidgetScreen.ToolTip = "今日亮屏：" + MainWindow.FormatDuration(day.ScreenSeconds);
             WidgetForeground.ToolTip = "活跃时长：" + MainWindow.FormatDuration(day.ForegroundSeconds) + "，按记录时的空闲规则估算，不含本软件。";
             WidgetRawForeground.Text = day.HasData ? "前台 " + (day.HasLegacyActivity ? "≥ " : "") + ShortDuration(day.RawForegroundSeconds) : "前台 —";
@@ -179,18 +179,35 @@ public partial class WidgetWindow : Window
     {
         public readonly Grid Root = new() { Height = 23 };
         public readonly Border Icon = new() { Width = 17, Height = 17, CornerRadius = new CornerRadius(5), VerticalAlignment = VerticalAlignment.Center };
-        public readonly TextBlock Name = new() { FontSize = 10, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(8, 0, 10, 0) };
-        public readonly TextBlock Duration = new() { FontSize = 10, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right };
+        public readonly TextBlock Name = new() { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(8, 0, 8, 0) };
+        public readonly TextBlock Duration = new() { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right };
+        public readonly Border Track = new() { Height = 3, CornerRadius = new CornerRadius(2), Margin = new Thickness(0, 0, 8, 0) };
+        public readonly Border Fill = new() { Height = 3, CornerRadius = new CornerRadius(2), HorizontalAlignment = HorizontalAlignment.Left };
         public string? AppId;
         public ImageSource? Source;
+        private double _relativeDuration;
+
         public WidgetAppRow()
         {
             Root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(17) });
             Root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            Root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(78) });
             Root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            Grid.SetColumn(Name, 1); Grid.SetColumn(Duration, 2);
-            Root.Children.Add(Icon); Root.Children.Add(Name); Root.Children.Add(Duration);
+            Grid.SetColumn(Name, 1); Grid.SetColumn(Track, 2); Grid.SetColumn(Duration, 3);
+            Track.Child = Fill;
+            Track.SetResourceReference(Border.BackgroundProperty, "Line");
+            Fill.SetResourceReference(Border.BackgroundProperty, "ChartForeground");
+            Track.SizeChanged += (_, _) => UpdateFill();
+            Root.Children.Add(Icon); Root.Children.Add(Name); Root.Children.Add(Track); Root.Children.Add(Duration);
         }
+
+        public void UpdateDuration(double seconds, double longest)
+        {
+            _relativeDuration = longest > 0 ? Math.Clamp(seconds / longest, 0, 1) : 0;
+            UpdateFill();
+        }
+
+        private void UpdateFill() => Fill.Width = Track.ActualWidth * _relativeDuration;
     }
 
     private void UpdateAppRows(List<AppUsage> apps, bool hasLegacyActivity)
@@ -207,6 +224,7 @@ public partial class WidgetWindow : Window
             var app = apps[i];
             row.Name.Text = app.Name; row.Name.Foreground = ThemeManager.GetBrush("Ink"); row.Name.ToolTip = app.Name;
             row.Duration.Text = ShortDuration(app.Seconds); row.Duration.Foreground = ThemeManager.GetBrush("Muted");
+            row.UpdateDuration(app.Seconds, apps[0].Seconds);
             row.Root.ToolTip = app.Name + "\n活跃 " + MainWindow.FormatDuration(app.Seconds) + "\n前台 " + MainWindow.FormatForegroundDuration(app.ForegroundSeconds, hasLegacyActivity) +
                 (hasLegacyActivity ? "\n" + MainWindow.LegacyActivityExplanation : "");
             var source = _controller.GetAppIcon(app.AppId);
@@ -264,6 +282,7 @@ public partial class WidgetWindow : Window
     private void More_Click(object sender, RoutedEventArgs e)
     { RefreshMenu(); _menu.PlacementTarget = MoreButton; _menu.Placement = PlacementMode.Bottom; _menu.HorizontalOffset = MoreButton.ActualWidth - 184; _menu.VerticalOffset = 4; _menu.IsOpen = true; }
     private void OpenDashboard_Click(object sender, RoutedEventArgs e) => Safe(() => OpenDashboardRequested?.Invoke());
+    private void ChartDetails_Click(object sender, RoutedEventArgs e) => Safe(() => WidgetChart.ShowDetails("今日 · 亮屏与活跃明细"));
     private void Pause_Click(object sender, RoutedEventArgs e) => Safe(() => { if (!_controller.IsRecordingEnabled) _controller.StartRecording(); else _controller.TogglePause(); });
     private void HideWidget() { _controller.WidgetEnabled = false; Hide(); }
     private void Widget_Closing(object? sender, CancelEventArgs e) { if (!_allowClose) { e.Cancel = true; Safe(HideWidget); } }

@@ -25,7 +25,7 @@ public sealed class AppSettings
     public bool WidgetLocked { get; set; }
     public double? WidgetLeft { get; set; }
     public double? WidgetTop { get; set; }
-    public string CreatedVersion { get; set; } = "0.5.1";
+    public string CreatedVersion { get; set; } = "0.5.2";
 
     public static bool IsValidIdleTimeout(int minutes, bool allowNever = false) =>
         minutes is 1 or 3 or 5 or 10 or 15 or 30 || (allowNever && minutes == 0);

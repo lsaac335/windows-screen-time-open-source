@@ -39,9 +39,10 @@ namespace ScreenTime
             _controller = controller;
             _selectedDate = _lastToday = controller.Today;
             InitializeComponent();
+            ConfigureNativeFrame();
             var workArea = SystemParameters.WorkArea;
-            Width = Math.Min(1160, workArea.Width);
-            Height = Math.Min(830, workArea.Height);
+            Width = Math.Min(Width, workArea.Width);
+            Height = Math.Min(Height, workArea.Height);
             AppsBarChart.AppSelected += app => ShowAppDetails(app, _selectedDate, _isWeek);
             ThemeManager.Apply(this, _controller.DarkMode);
             DateSelector.SelectedDate = _selectedDate;
@@ -147,22 +148,24 @@ namespace ScreenTime
                 DataPathText.Text = _controller.DataDirectory;
                 TimeZoneText.Text = "统计时区：" + _controller.TimeZoneId + "（固定，不随系统校时重排历史）";
                 SelectedRangeText.Text = "当前选定范围：" + RangeText() + "。删除历史不会停止之后的记录。";
-                PageTitle.Text = _page == "settings" ? "设置" : _page == "apps" ? "应用统计" : "使用概览";
-                PageSubtitle.Text = _page == "settings" ? "你的记录，由你掌控。" : (_isWeek ? "最近七天，看看时间的流向。" : _selectedDate == today ? "让每一段时间，都看得见。" : _selectedDate.ToString("yyyy 年 M 月 d 日", CultureInfo.InvariantCulture) + " 的使用记录");
-                SetNav(OverviewNav, _page == "overview");
-                SetNav(AppsNav, _page == "apps");
-                SetNav(SettingsNav, _page == "settings");
+                PageHeading.Visibility = _page == "overview" ? Visibility.Collapsed : Visibility.Visible;
+                PageTitle.Text = _page == "settings" ? "设置" : "应用统计";
+                PageSubtitle.Text = _page == "settings" ? "记录、外观与数据管理" : RangeText();
+                OverviewNav.IsChecked = _page == "overview";
+                AppsNav.IsChecked = _page == "apps";
+                SettingsNav.IsChecked = _page == "settings";
                 OverviewPanel.Visibility = _page == "overview" ? Visibility.Visible : Visibility.Collapsed;
+                OverviewSummary.Visibility = OverviewPanel.Visibility;
                 AppsPanel.Visibility = _page == "apps" ? Visibility.Visible : Visibility.Collapsed;
                 SettingsPanel.Visibility = _page == "settings" ? Visibility.Visible : Visibility.Collapsed;
                 DateToolbar.Visibility = _page == "settings" ? Visibility.Collapsed : Visibility.Visible;
                 MetricToolbar.Visibility = _page == "settings" ? Visibility.Collapsed : Visibility.Visible;
-                SetDateButton(ActiveMetricButton, !_showRawForeground && !_showVisible);
-                SetDateButton(ForegroundMetricButton, _showRawForeground);
-                SetDateButton(VisibleMetricButton, _showVisible);
-                SetDateButton(TodayButton, !_isWeek && _selectedDate == today);
-                SetDateButton(YesterdayButton, !_isWeek && _selectedDate == today.AddDays(-1));
-                SetDateButton(WeekButton, _isWeek);
+                ActiveMetricButton.IsChecked = !_showRawForeground && !_showVisible;
+                ForegroundMetricButton.IsChecked = _showRawForeground;
+                VisibleMetricButton.IsChecked = _showVisible;
+                TodayButton.IsChecked = !_isWeek && _selectedDate == today;
+                YesterdayButton.IsChecked = !_isWeek && _selectedDate == today.AddDays(-1);
+                WeekButton.IsChecked = _isWeek;
                 if (_page == "settings") return;
 
                 if (_isWeek)
@@ -174,31 +177,34 @@ namespace ScreenTime
                 var summary = _summary;
                 MetricHintText.Text = _showVisible ? "允许多应用并行累计；表示展示，不代表关注" : _showRawForeground ? "包括空闲；只计获得焦点的应用" : "扣除超出阈值的空闲，是活跃估计值";
                 if (_page == "apps") { RenderAllApps(summary.Apps); return; }
-                ScreenValue.Text = summary.HasData ? FormatDuration(summary.ScreenSeconds) : "—";
-                ForegroundValue.Text = summary.HasData ? FormatDuration(summary.ForegroundSeconds) : "—";
-                RawForegroundValue.Text = summary.HasData ? FormatForegroundDuration(summary.RawForegroundSeconds, summary.HasLegacyActivity) : "—";
+                DurationTypography.Set(ScreenValue, summary.HasData ? FormatDuration(summary.ScreenSeconds) : "—");
+                DurationTypography.Set(ForegroundValue, summary.HasData ? FormatDuration(summary.ForegroundSeconds) : "—");
+                OverviewRing.SetUsage(summary.ForegroundSeconds, summary.ScreenSeconds, summary.HasData);
+                DurationTypography.Set(RawForegroundValue, summary.HasData ? FormatForegroundDuration(summary.RawForegroundSeconds, summary.HasLegacyActivity) : "—");
                 RawForegroundCaption.Text = summary.HasLegacyActivity ? "≥ 为旧记录可确认的下限" : "包括空闲 · 不含本软件";
                 RawForegroundValue.ToolTip = summary.HasLegacyActivity ? LegacyActivityExplanation : "应用获得前台焦点的累计时间，包括空闲，不含本软件。";
                 LockedValue.Text = summary.HasData ? "其中锁屏亮屏 " + FormatDuration(summary.LockedSeconds) : "屏幕亮着的时间";
+                TopAppsCaption.Text = "按" + MetricName + "时长排序";
                 ChartMetricLegend.Text = MetricName;
                 MainChart.MetricLabel = MetricName;
                 MainChart.MetricIsLowerBound = _showRawForeground && summary.HasLegacyActivity;
+                bool chartHasData = summary.HasData || (_showVisible && summary.VisibilityObservedSeconds > 0);
                 if (_isWeek)
                 {
                     ChartTitle.Text = "最近七天的使用分布";
                     ChartCaption.Text = RangeText() + " · 亮屏与" + MetricName + "时长";
                     MainChart.SetData(_week.Select(d => d.ScreenSeconds).ToArray(), _week.Select(MetricTotal).ToArray(),
-                        _week.Select(d => DateTime.TryParse(d.Date, out var date) ? date.ToString("M/d") : d.Date).ToArray(), _showVisible ? summary.VisibilityObservedSeconds > 0 : summary.HasData);
+                        _week.Select(d => DateTime.TryParse(d.Date, out var date) ? date.ToString("M/d") : d.Date).ToArray(), chartHasData);
                     SetWeekCoverage(MainChart, _week);
                     int valid = _week.Count(d => d.HasData);
                     CoverageText.Text = valid == 0 ? "这段时间还没有可用记录，灰纹表示未记录。" : "已记录 " + valid + "/7 天。灰纹为未记录或部分记录的日期，不能视为完整全天数据。";
                 }
                 else
                 {
-                    ChartTitle.Text = "一天中的使用分布";
+                    ChartTitle.Text = "分时使用";
                     ChartCaption.Text = _selectedDate.ToString("M 月 d 日") + " · 亮屏与" + MetricName + "时长";
                     bool detail = summary.HasHourlyDetails;
-                    MainChart.SetData(summary.ScreenHourly, _showVisible ? summary.VisibleHourly : _showRawForeground ? summary.RawForegroundHourly : summary.ForegroundHourly, Enumerable.Range(0, 24).Select(i => i.ToString("00")).ToArray(), (_showVisible ? summary.VisibilityObservedSeconds > 0 : summary.HasData) && detail,
+                    MainChart.SetData(summary.ScreenHourly, _showVisible ? summary.VisibleHourly : _showRawForeground ? summary.RawForegroundHourly : summary.ForegroundHourly, Enumerable.Range(0, 24).Select(i => i.ToString("00")).ToArray(), chartHasData && detail,
                         summary.HasData && !detail ? "小时明细已过保留期，仍可查看每日汇总" : _showVisible ? "此日期尚未采集可见时间，历史无法补算" : "还没有记录，开始后时间会在这里呈现");
                     if (detail) SetHourlyCoverage(MainChart, summary, _selectedDate);
                     else MainChart.SetCoverage(Array.Empty<double>(), Array.Empty<double>());
@@ -343,14 +349,23 @@ namespace ScreenTime
         {
             var row = new AppRowView();
             var grid = new Grid { Margin = new Thickness(0, 7, 0, 7) };
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(40) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(full ? 40 : 33) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(full ? 110 : compact ? 98 : 95) });
+            grid.ColumnDefinitions.Add(full
+                ? new ColumnDefinition { Width = new GridLength(110) }
+                : new ColumnDefinition { Width = GridLength.Auto, MaxWidth = 88 });
             if (full) grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(60) });
-            row.Icon = new Border { Width = 30, Height = 30, CornerRadius = new CornerRadius(9), HorizontalAlignment = HorizontalAlignment.Left };
+            row.Icon = new Border { Width = full ? 30 : 25, Height = full ? 30 : 25, CornerRadius = new CornerRadius(8), HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
             grid.Children.Add(row.Icon);
-            var namePanel = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0) };
-            row.NameText = new TextBlock { FontSize = 11, TextTrimming = TextTrimming.CharacterEllipsis };
+            var namePanel = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
+            row.NameText = new TextBlock { FontSize = 12, TextTrimming = TextTrimming.CharacterEllipsis };
+            if (!full)
+            {
+                row.NameText.TextWrapping = TextWrapping.Wrap;
+                row.NameText.LineStackingStrategy = LineStackingStrategy.BlockLineHeight;
+                row.NameText.LineHeight = 17;
+                row.NameText.MaxHeight = 34;
+            }
             namePanel.Children.Add(row.NameText);
             if (!full)
             {
@@ -361,7 +376,8 @@ namespace ScreenTime
                 namePanel.Children.Add(row.Track);
             }
             Grid.SetColumn(namePanel, 1); grid.Children.Add(namePanel);
-            row.DurationText = new TextBlock { FontSize = 11, FontWeight = FontWeights.Medium, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
+            row.DurationText = new TextBlock { FontSize = 12, FontWeight = FontWeights.Medium, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center,
+                TextWrapping = full ? TextWrapping.NoWrap : TextWrapping.Wrap, TextAlignment = TextAlignment.Right };
             Grid.SetColumn(row.DurationText, 2); grid.Children.Add(row.DurationText);
             if (full)
             {
@@ -389,6 +405,7 @@ namespace ScreenTime
             bool legacy = _summary?.HasLegacyActivity == true;
             row.Share = AppShare(app);
             row.DurationText.Text = _showRawForeground ? FormatForegroundDuration(app.ForegroundSeconds, legacy) : FormatDuration(AppSeconds(app));
+            System.Windows.Automation.AutomationProperties.SetName(row.Button, name + "，" + MetricName + "时长 " + row.DurationText.Text + "，打开应用详情");
             row.Button.ToolTip = name + "\n活跃 " + FormatDuration(app.Seconds) + "\n前台 " + FormatForegroundDuration(app.ForegroundSeconds, legacy) + "\n可见 " + FormatDuration(app.VisibleSeconds) + "\n点击查看详情" + (legacy ? "\n" + LegacyActivityExplanation : "");
             if (row.PercentText != null) row.PercentText.Text = row.Share.ToString("P0", CultureInfo.CurrentCulture);
             if (row.Fill != null) row.Fill.Background = Brush(color);
@@ -400,7 +417,7 @@ namespace ScreenTime
                 if (!ReferenceEquals(row.IconSource, applicationIcon))
                 {
                     row.Icon.Background = Brushes.Transparent;
-                    row.Icon.Child = new Image { Source = applicationIcon, Width = 28, Height = 28, Stretch = Stretch.Uniform, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+                    row.Icon.Child = new Image { Source = applicationIcon, Width = row.Icon.Width - 2, Height = row.Icon.Height - 2, Stretch = Stretch.Uniform, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
                     row.IconSource = applicationIcon;
                 }
             }
@@ -437,7 +454,8 @@ namespace ScreenTime
             DateTime now = StatisticsNow();
             bool[] future = Enumerable.Range(0, 24).Select(h => date.Date > now.Date || (date.Date == now.Date && h > now.Hour)).ToArray();
             double[] expected = Enumerable.Range(0, 24).Select(h => date.Date < now.Date ? 3600d : date.Date > now.Date ? 0d : Math.Clamp(now.TimeOfDay.TotalSeconds - h * 3600, 0, 3600)).ToArray();
-            chart.SetCoverage(_showVisible ? day.VisibilityObservedHourly : day.ObservedHourly, _showVisible ? Array.Empty<double>() : day.UnknownHourly, future, expected);
+            chart.SetCoverage(_showVisible ? day.VisibilityObservedHourly : day.ObservedHourly, _showVisible ? Array.Empty<double>() : day.UnknownHourly, future, expected,
+                _showVisible && !chart.ForegroundOnly ? day.ObservedHourly : null);
         }
 
         private void SetWeekCoverage(UsageChart chart, List<DaySummary> days)
@@ -445,7 +463,8 @@ namespace ScreenTime
             DateTime now = StatisticsNow();
             DateTime[] dates = days.Select(d => DateTime.TryParse(d.Date, out var date) ? date.Date : now.Date).ToArray();
             chart.SetCoverage(days.Select(d => _showVisible ? d.VisibilityObservedSeconds : d.ObservedSeconds).ToArray(), days.Select(d => _showVisible ? 0 : d.UnknownSeconds).ToArray(), dates.Select(d => d > now.Date).ToArray(),
-                dates.Select(d => d < now.Date ? 86400d : d > now.Date ? 0d : now.TimeOfDay.TotalSeconds).ToArray());
+                dates.Select(d => d < now.Date ? 86400d : d > now.Date ? 0d : now.TimeOfDay.TotalSeconds).ToArray(),
+                _showVisible && !chart.ForegroundOnly ? days.Select(d => d.ObservedSeconds).ToArray() : null);
         }
 
         private void ShowAppDetails(AppUsage app, DateTime selectedDate, bool isWeek)
@@ -493,7 +512,7 @@ namespace ScreenTime
                     var dayChart = new UsageChart { Height = 142, ForegroundOnly = true, MetricLabel = MetricName, MetricIsLowerBound = _showRawForeground && day.HasLegacyActivity };
                     dayChart.SetData(Array.Empty<double>(), hourly, Enumerable.Range(0, 24).Select(h => h.ToString("00")).ToArray(), _showVisible ? day.VisibilityObservedSeconds > 0 : day.HasData, "该日期未记录此指标，不能视为零使用");
                     SetHourlyCoverage(dayChart, day, selectedDate);
-                    panel.Children.Add(dayChart);
+                    AddChartWithDetails(panel, dayChart, app.Name + " · " + selectedDate.ToString("M 月 d 日") + "分时明细");
                 }
                 else panel.Children.Add(new TextBlock { Text = "该日期的小时明细已过保留期，仍可查看每日汇总。", Foreground = Brush("#939BB0"), FontSize = 11, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 20, 0, 25) });
                 panel.Children.Add(new TextBlock { Text = "最近七天 · " + MetricName + "时长", FontSize = 12, Margin = new Thickness(0, 24, 0, 10) });
@@ -501,12 +520,28 @@ namespace ScreenTime
                 double[] values = days.Select(d => d.Apps.Where(a => string.Equals(a.AppId, app.AppId, StringComparison.OrdinalIgnoreCase)).Sum(AppSeconds)).ToArray();
                 chart.SetData(Array.Empty<double>(), values, days.Select(d => DateTime.TryParse(d.Date, out var dt) ? dt.ToString("M/d") : d.Date).ToArray(), days.Any(d => _showVisible ? d.VisibilityObservedSeconds > 0 : d.HasData));
                 SetWeekCoverage(chart, days);
-                panel.Children.Add(chart);
+                AddChartWithDetails(panel, chart, app.Name + " · 近 7 天明细");
                 panel.Children.Add(new TextBlock { Text = "前台时长包含空闲；活跃时长按记录时的空闲规则估算。灰纹为未记录/部分记录，浅底为未来时间，均不能解释为零使用。", Foreground = Brush("#9CA4B6"), FontSize = 10, Margin = new Thickness(0, 17, 0, 0), TextWrapping = TextWrapping.Wrap });
                 ThemeManager.Apply(dialog, _controller.DarkMode);
                 dialog.Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
                 dialog.ShowDialog();
             });
+        }
+
+        private void AddChartWithDetails(Panel panel, UsageChart chart, string title)
+        {
+            panel.Children.Add(chart);
+            var details = new Button
+            {
+                Content = "数据明细",
+                Style = (Style)FindResource("RoundButton"),
+                Padding = new Thickness(10, 4, 10, 4),
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin = new Thickness(0, 5, 0, 0)
+            };
+            System.Windows.Automation.AutomationProperties.SetName(details, "查看" + title);
+            details.Click += (_, _) => Safe(() => chart.ShowDetails(title));
+            panel.Children.Add(details);
         }
 
         public static string FormatDuration(double seconds)
@@ -519,17 +554,34 @@ namespace ScreenTime
 
         private string RangeText() => _isWeek ? _selectedDate.AddDays(-6).ToString("yyyy/M/d") + " — " + _selectedDate.ToString("M/d") : _selectedDate.ToString("yyyy/M/d");
         private static Brush Brush(string color) => ThemeManager.LegacyBrush(color);
-        private void SetNav(Button button, bool active) { button.Background = Brush(active ? "#303B5B" : "#19233E"); button.Foreground = active ? Brushes.White : ThemeManager.GetBrush("SidebarMuted"); }
-        private void SetDateButton(Button button, bool active) { button.Background = Brush(active ? "#EFEEFF" : "#FFFFFF"); button.Foreground = Brush(active ? "#5854E8" : "#717C93"); button.BorderBrush = Brush(active ? "#DAD7FD" : "#E5E8F0"); }
+        private void ChartDetails_Click(object sender, RoutedEventArgs e) =>
+            Safe(() => MainChart.ShowDetails((_isWeek ? "近 7 天" : _selectedDate.ToString("M 月 d 日")) + " · 亮屏与" + MetricName + "明细"));
 
-        private void Nav_Click(object sender, RoutedEventArgs e) { _page = (sender as Button)?.Tag as string ?? "overview"; Render(); }
+        private bool AcceptSelection => _ready && !_rendering;
+
+        private void Nav_Checked(object sender, RoutedEventArgs e)
+        {
+            if (!AcceptSelection) return;
+            _page = (sender as RadioButton)?.Tag as string ?? "overview";
+            Render();
+        }
+
         private void AllApps_Click(object sender, RoutedEventArgs e) { _page = "apps"; Render(); }
-        private void Today_Click(object sender, RoutedEventArgs e) => SelectDate(_controller.Today, false);
-        private void Yesterday_Click(object sender, RoutedEventArgs e) => SelectDate(_controller.Today.AddDays(-1), false);
-        private void Week_Click(object sender, RoutedEventArgs e) => SelectDate(_controller.Today, true);
-        private void ActiveMetric_Click(object sender, RoutedEventArgs e) { _showVisible = false; _showRawForeground = false; _appPage = 0; Render(); }
-        private void ForegroundMetric_Click(object sender, RoutedEventArgs e) { _showVisible = false; _showRawForeground = true; _appPage = 0; Render(); }
-        private void VisibleMetric_Click(object sender, RoutedEventArgs e) { _showVisible = true; _showRawForeground = false; _appPage = 0; Render(); }
+        private void Today_Checked(object sender, RoutedEventArgs e) { if (AcceptSelection) SelectDate(_controller.Today, false); }
+        private void Yesterday_Checked(object sender, RoutedEventArgs e) { if (AcceptSelection) SelectDate(_controller.Today.AddDays(-1), false); }
+        private void Week_Checked(object sender, RoutedEventArgs e) { if (AcceptSelection) SelectDate(_controller.Today, true); }
+        private void ActiveMetric_Checked(object sender, RoutedEventArgs e) => SelectMetric(showVisible: false, showFront: false);
+        private void ForegroundMetric_Checked(object sender, RoutedEventArgs e) => SelectMetric(showVisible: false, showFront: true);
+        private void VisibleMetric_Checked(object sender, RoutedEventArgs e) => SelectMetric(showVisible: true, showFront: false);
+
+        private void SelectMetric(bool showVisible, bool showFront)
+        {
+            if (!AcceptSelection) return;
+            _showVisible = showVisible;
+            _showRawForeground = showFront;
+            _appPage = 0;
+            Render();
+        }
         private void Background_Click(object sender, RoutedEventArgs e) => Safe(() => BackgroundRequested?.Invoke());
         private void VisibilityDetection_Changed(object sender, RoutedEventArgs e) { if (_ready && !_rendering) Safe(() => _controller.VisibilityDetectionEnabled = VisibilityDetectionCheck.IsChecked == true); }
         private void SelectDate(DateTime date, bool week) { _selectedDate = date.Date; _isWeek = week; _followToday = week || _selectedDate == _controller.Today; _ready = false; DateSelector.SelectedDate = _selectedDate; _ready = true; Render(); }

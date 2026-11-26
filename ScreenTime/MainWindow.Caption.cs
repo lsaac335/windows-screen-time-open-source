@@ -3,13 +3,31 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Shell;
 
 namespace ScreenTime;
 
 public partial class MainWindow
 {
+    private const int DwmWindowCornerPreference = 33;
+    private const int DwmCornerRound = 2;
     private static readonly Geometry MaximizeCaptionGeometry = Geometry.Parse("M0.5,0.5 H9.5 V9.5 H0.5 Z").GetAsFrozen() as Geometry ?? Geometry.Empty;
     private static readonly Geometry RestoreCaptionGeometry = Geometry.Parse("M2.5,2.5 V0.5 H9.5 V7.5 H7.5 M0.5,2.5 H7.5 V9.5 H0.5 Z").GetAsFrozen() as Geometry ?? Geometry.Empty;
+    private void ConfigureNativeFrame()
+    {
+        if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000)) return;
+
+        // A zero glass margin makes WindowChrome apply a window region, which
+        // prevents DWM from compositing the rounded corners.
+        WindowChrome.GetWindowChrome(this).GlassFrameThickness = new Thickness(1);
+        SourceInitialized += (_, _) =>
+        {
+            var handle = new WindowInteropHelper(this).Handle;
+            int preference = DwmCornerRound;
+            DwmSetWindowAttribute(handle, DwmWindowCornerPreference, ref preference, sizeof(int));
+        };
+    }
+
     private void UpdateCaptionLayout()
     {
         if (DockMaximizeButton == null || WindowFrame == null) return;
@@ -41,4 +59,5 @@ public partial class MainWindow
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool GetWindowRect(IntPtr window, out CaptionRect rect);
     [DllImport("user32.dll")] private static extern IntPtr MonitorFromWindow(IntPtr window, uint flags);
     [DllImport("user32.dll", CharSet = CharSet.Auto)] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool GetMonitorInfo(IntPtr monitor, ref CaptionMonitorInfo info);
+    [DllImport("dwmapi.dll")] private static extern int DwmSetWindowAttribute(IntPtr window, int attribute, ref int value, int size);
 }

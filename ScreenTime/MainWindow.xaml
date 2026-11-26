@@ -3,10 +3,10 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:ScreenTime"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
-        Title="屏幕时间 · Screen Time" Width="1160" Height="830" MinWidth="960" MinHeight="680"
+        Title="屏幕时间 · Screen Time" Width="1200" Height="820" MinWidth="960" MinHeight="680"
         WindowStartupLocation="CenterScreen" WindowStyle="None" ResizeMode="CanResize" Background="{DynamicResource WindowBackground}" UseLayoutRounding="True" TextOptions.TextFormattingMode="Display">
     <shell:WindowChrome.WindowChrome>
-        <shell:WindowChrome CaptionHeight="32" ResizeBorderThickness="6" CornerRadius="8" GlassFrameThickness="0" UseAeroCaptionButtons="False"/>
+        <shell:WindowChrome CaptionHeight="36" ResizeBorderThickness="6" CornerRadius="8" GlassFrameThickness="0" UseAeroCaptionButtons="False"/>
     </shell:WindowChrome.WindowChrome>
     <Window.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries><ResourceDictionary Source="Theme.xaml"/><ResourceDictionary Source="Caption.xaml"/></ResourceDictionary.MergedDictionaries>
         <Style x:Key="IdleRuleSelector" TargetType="ComboBox">
@@ -35,13 +35,14 @@
             </ControlTemplate></Setter.Value></Setter>
         </Style>
     </ResourceDictionary></Window.Resources>
-    <Grid x:Name="WindowFrame">
-    <Grid.RowDefinitions><RowDefinition Height="32"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-    <Border Background="{DynamicResource WindowBackground}">
+    <Grid x:Name="WindowFrame" Background="{DynamicResource GlassBackdrop}">
+    <Grid.RowDefinitions><RowDefinition Height="36"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+    <Border Grid.RowSpan="2" Background="{DynamicResource MainWindowEdgeDepth}" IsHitTestVisible="False"/>
+    <Border BorderBrush="{DynamicResource GlassInset}" BorderThickness="0,0,0,1">
         <Grid>
             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,12,0" IsHitTestVisible="False">
-                <StackPanel.Style><Style TargetType="StackPanel"><Style.Triggers><DataTrigger Binding="{Binding IsActive, RelativeSource={RelativeSource AncestorType=Window}}" Value="False"><Setter Property="Opacity" Value="0.5"/></DataTrigger></Style.Triggers></Style></StackPanel.Style>
+                <StackPanel.Style><Style TargetType="StackPanel"><Style.Triggers><DataTrigger Binding="{Binding IsActive, RelativeSource={RelativeSource AncestorType=Window}}" Value="False"><Setter Property="Opacity" Value="0.78"/></DataTrigger></Style.Triggers></Style></StackPanel.Style>
                 <Border Width="16" Height="16" CornerRadius="3" Background="{DynamicResource AccentFill}" Margin="0,0,8,0">
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
                         <Rectangle Width="2" Height="5" Fill="White" VerticalAlignment="Bottom" Margin="0,0,2,0"/>
@@ -49,7 +50,7 @@
                         <Rectangle Width="2" Height="7" Fill="White" VerticalAlignment="Bottom"/>
                     </StackPanel>
                 </Border>
-                <TextBlock Text="屏幕时间" FontFamily="Segoe UI" FontSize="12" Foreground="{DynamicResource Ink}" VerticalAlignment="Center"/>
+                <TextBlock Text="屏幕时间" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource Ink}" VerticalAlignment="Center"/>
             </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
                 <ToggleButton x:Name="PinButton" Style="{StaticResource CaptionPinButton}" Click="Pin_Click" ToolTip="置顶面板" AutomationProperties.Name="置顶面板" shell:WindowChrome.IsHitTestVisibleInChrome="True"/>
@@ -67,52 +68,72 @@
     </Border>
     <Grid Grid.Row="1">
     <Grid x:Name="FullPanel">
-        <Grid.ColumnDefinitions><ColumnDefinition Width="206"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-        <Border Background="{DynamicResource SidebarBackground}">
-            <Grid Margin="20,32,20,22">
-                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                <StackPanel Margin="12,0,0,40">
-                    <Grid Width="42" Height="42" HorizontalAlignment="Left" Margin="0,0,0,14">
-                        <Border Background="#6D68F3" CornerRadius="12"/>
-                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,11">
-                            <Border Width="4" Height="9" Background="White" CornerRadius="2" Margin="0,0,3,0" VerticalAlignment="Bottom"/>
-                            <Border Width="4" Height="18" Background="White" CornerRadius="2" Margin="0,0,3,0" VerticalAlignment="Bottom"/>
-                            <Border Width="4" Height="13" Background="#C8C5FF" CornerRadius="2" VerticalAlignment="Bottom"/>
+        <Grid.ColumnDefinitions><ColumnDefinition Width="192"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+        <Border IsHitTestVisible="False" Margin="17,9,-3,11" CornerRadius="22" Background="{DynamicResource GlassDepth}"/>
+        <Border Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource GlassEdge}"
+                BorderThickness="1" CornerRadius="22" Margin="14,5,0,15">
+          <Grid>
+            <Border Style="{StaticResource GlassHighlight}" CornerRadius="18"/>
+            <Grid Margin="10,13,10,14">
+                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                <StackPanel>
+                    <RadioButton GroupName="Navigation" x:Name="OverviewNav" Style="{StaticResource NavChoice}" Tag="overview" Checked="Nav_Checked" AutomationProperties.Name="使用概览">
+                        <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE80F;" Style="{StaticResource LineIcon}"/><TextBlock Text="使用概览"/></StackPanel>
+                    </RadioButton>
+                    <RadioButton GroupName="Navigation" x:Name="AppsNav" Style="{StaticResource NavChoice}" Tag="apps" Checked="Nav_Checked" AutomationProperties.Name="应用统计">
+                        <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE9D9;" Style="{StaticResource LineIcon}"/><TextBlock Text="应用统计"/></StackPanel>
+                    </RadioButton>
+                </StackPanel>
+                <StackPanel Grid.Row="2">
+                    <Button Style="{StaticResource NavButton}" Click="Collapse_Click" AutomationProperties.Name="打开桌面小组件" ToolTip="收起主面板并打开桌面小组件">
+                        <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE8A7;" Style="{StaticResource LineIcon}"/><TextBlock Text="桌面小组件"/></StackPanel>
+                    </Button>
+                    <RadioButton GroupName="Navigation" x:Name="SettingsNav" Style="{StaticResource NavChoice}" Tag="settings" Checked="Nav_Checked" AutomationProperties.Name="设置">
+                        <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE713;" Style="{StaticResource LineIcon}"/><TextBlock Text="设置"/></StackPanel>
+                    </RadioButton>
+                    <Border Height="1" Background="{DynamicResource GlassEdge}" Margin="4,8,4,12"/>
+                    <StackPanel Orientation="Horizontal" Margin="10,0,0,0" TextElement.Foreground="{DynamicResource SidebarMuted}">
+                        <TextBlock Text="&#xE7F4;" Style="{StaticResource LineIcon}"/>
+                        <StackPanel>
+                            <TextBlock Text="我的电脑" FontSize="12" FontWeight="SemiBold"/>
+                            <TextBlock Text="记录保存在本机" FontSize="10" Margin="0,2,0,0"/>
                         </StackPanel>
-                    </Grid>
-                    <TextBlock Text="屏幕时间" Foreground="White" FontSize="21" FontWeight="SemiBold"/>
-                    <TextBlock Text="SCREEN TIME" Foreground="{DynamicResource SidebarMuted}" FontSize="9" Margin="1,7,0,0"/>
-                </StackPanel>
-                <StackPanel Grid.Row="1">
-                    <TextBlock Text="我的电脑" Foreground="{DynamicResource SidebarMuted}" FontSize="10" Margin="15,0,0,13"/>
-                    <Button x:Name="OverviewNav" Style="{StaticResource NavButton}" Tag="overview" Click="Nav_Click" Background="{DynamicResource SidebarActive}" Foreground="White"><TextBlock Text="▦    使用概览"/></Button>
-                    <Button x:Name="AppsNav" Style="{StaticResource NavButton}" Tag="apps" Click="Nav_Click"><TextBlock Text="▥    应用统计"/></Button>
-                    <Button x:Name="SettingsNav" Style="{StaticResource NavButton}" Tag="settings" Click="Nav_Click"><TextBlock Text="⚙    设置"/></Button>
-                </StackPanel>
-                <Border Grid.Row="3" Background="{DynamicResource SidebarCardBackground}" CornerRadius="12" Padding="14">
-                    <StackPanel>
-                        <TextBlock Text="只属于你的记录" Foreground="#D7DDF0" FontSize="11"/>
-                        <TextBlock Text="本地保存 · 无需登录" Foreground="{DynamicResource SidebarMuted}" FontSize="10" Margin="0,7,0,0"/>
-                        <Border Height="1" Background="{DynamicResource Line}" Margin="0,14,0,11"/>
-                        <TextBlock Text="Windows  ·  版本 0.5.1" Foreground="{DynamicResource SidebarMuted}" FontSize="10"/>
                     </StackPanel>
-                </Border>
+                </StackPanel>
             </Grid>
+          </Grid>
         </Border>
         <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-            <StackPanel Margin="30,28,30,26">
-                <Grid Margin="0,0,0,23">
+            <ScrollViewer.Resources>
+                <Style TargetType="ScrollBar" BasedOn="{StaticResource GlassScrollBar}"/>
+            </ScrollViewer.Resources>
+            <StackPanel Margin="18,7,23,18">
+                <StackPanel x:Name="PageHeading" Margin="3,7,0,11">
+                    <TextBlock x:Name="PageTitle" FontSize="25" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="PageSubtitle" Foreground="{DynamicResource Muted}" FontSize="12" Margin="1,5,0,0"/>
+                </StackPanel>
+                <Grid Margin="0,0,0,12">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                    <StackPanel>
-                        <TextBlock x:Name="PageTitle" Text="使用概览" FontSize="26" FontWeight="SemiBold"/>
-                        <TextBlock x:Name="PageSubtitle" Text="让每一段时间，都看得见。" Foreground="{DynamicResource Muted}" FontSize="12" Margin="1,7,0,0"/>
-                    </StackPanel>
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                        <Button Content="收起 ↙" Style="{StaticResource RoundButton}" Padding="11,8" Margin="0,0,12,0" Click="Collapse_Click" ToolTip="切换到桌面小组件"/>
-                        <Border x:Name="StatusPill" Background="{DynamicResource StatusGoodBackground}" CornerRadius="15" Padding="11,7" Margin="0,0,12,0" VerticalAlignment="Center">
-                            <StackPanel Orientation="Horizontal"><Ellipse x:Name="StatusDot" Width="6" Height="6" Fill="{DynamicResource StatusGood}" Margin="0,0,7,0"/><TextBlock x:Name="StatusLabel" Text="等待开始" FontSize="10" Foreground="{DynamicResource StatusGood}"/></StackPanel>
+                    <WrapPanel x:Name="DateToolbar" VerticalAlignment="Center">
+                        <DatePicker x:Name="DateSelector" Width="127" Height="31" SelectedDateChanged="Date_Changed" VerticalContentAlignment="Center"
+                                    AutomationProperties.Name="统计日期" Margin="0,0,9,0"/>
+                        <RadioButton GroupName="DateRange" x:Name="TodayButton" Content="今天" Style="{StaticResource ChoiceButton}" Checked="Today_Checked" Margin="0,0,5,0"/>
+                        <RadioButton GroupName="DateRange" x:Name="YesterdayButton" Content="昨天" Style="{StaticResource ChoiceButton}" Checked="Yesterday_Checked" Margin="0,0,5,0"/>
+                        <RadioButton GroupName="DateRange" x:Name="WeekButton" Content="近 7 天" Style="{StaticResource ChoiceButton}" Checked="Week_Checked" Margin="0,0,8,0"/>
+                        <Button Content="↻" Style="{StaticResource RoundButton}" Padding="10,7" AutomationProperties.Name="刷新记录" ToolTip="刷新记录" Click="Refresh_Click"/>
+                    </WrapPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="6,0,0,0">
+                        <Button Content="导出 CSV" Style="{StaticResource RoundButton}" Click="Export_Click" Margin="0,0,8,0"
+                                Visibility="{Binding Visibility, ElementName=DateToolbar}"/>
+                        <Border x:Name="StatusPill" Background="{DynamicResource StatusGoodBackground}" CornerRadius="12" Padding="9,6" Margin="0,0,8,0" VerticalAlignment="Center">
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                <Ellipse x:Name="StatusDot" Width="6" Height="6" Fill="{DynamicResource StatusGood}" Margin="0,0,6,0"/>
+                                <TextBlock Grid.Column="1" x:Name="StatusLabel" Text="等待开始" FontSize="10" Foreground="{DynamicResource StatusGood}"
+                                           TextTrimming="CharacterEllipsis" MaxWidth="96" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+                            </Grid>
                         </Border>
-                        <Button x:Name="PauseButton" Content="开始记录" Style="{StaticResource PrimaryButton}" Click="Pause_Click"/>
+                        <Button x:Name="PauseButton" Content="开始记录" Style="{StaticResource RoundButton}" Click="Pause_Click"/>
                     </StackPanel>
                 </Grid>
                 <Border x:Name="ErrorBanner" Visibility="Collapsed" Background="{DynamicResource StatusWarningBackground}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="9" Padding="12" Margin="0,0,0,16">
@@ -128,76 +149,123 @@
                         <Button Grid.Column="1" Content="开始记录  →" Style="{StaticResource PrimaryButton}" VerticalAlignment="Center" Click="Start_Click"/>
                     </Grid>
                 </Border>
-                <Grid x:Name="DateToolbar" Margin="0,0,0,18">
+                <Border x:Name="OverviewSummary" Style="{StaticResource Card}" Background="{DynamicResource GlassHero}"
+                        BorderBrush="{DynamicResource GlassEdge}" CornerRadius="22" Padding="0" Margin="0,0,0,13">
+                    <Grid>
+                      <Border Style="{StaticResource GlassHighlight}" CornerRadius="18"/>
+                      <Grid Margin="22,15">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="1.2*"/><ColumnDefinition Width="0.72*"/><ColumnDefinition Width="0.94*"/></Grid.ColumnDefinitions>
+                        <StackPanel Margin="0,0,12,0" VerticalAlignment="Center">
+                            <TextBlock Text="使用概览" FontSize="24" FontWeight="SemiBold"/>
+                            <TextBlock Text="活跃时长" Foreground="{DynamicResource Muted}" FontSize="12" Margin="0,9,0,0"
+                                       ToolTip="从前台时长中扣除超过空闲阈值的累计时间。活跃状态由操作时间推测。"/>
+                            <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left" Height="54" Margin="0,2,0,4">
+                                <TextBlock x:Name="ForegroundValue" Text="—" Foreground="{DynamicResource AccentText}" FontFamily="Segoe UI Variable Display, Segoe UI, Microsoft YaHei UI" FontSize="54" FontWeight="SemiBold"/>
+                            </Viewbox>
+                            <TextBlock Text="按记录时的空闲规则估算" Foreground="{DynamicResource Muted}" FontSize="11"/>
+                        </StackPanel>
+                        <local:ActivityRing x:Name="OverviewRing" Grid.Column="1" Width="116" Height="116" HorizontalAlignment="Center"
+                                            AutomationProperties.Name="活跃时长占亮屏时长 —" ToolTip="活跃时长占同期亮屏时长的比例"/>
+                        <Border Grid.Column="2" BorderBrush="{DynamicResource Line}" BorderThickness="1,0,0,0" Padding="15,0,0,0">
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="亮屏时长" Foreground="{DynamicResource Muted}" FontSize="12"
+                                           ToolTip="Windows 报告显示状态为开启或变暗的累计时间，包含锁屏亮屏，多屏不叠加。"/>
+                                <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left" Height="32">
+                                    <TextBlock x:Name="ScreenValue" Text="—" FontFamily="Segoe UI, Microsoft YaHei UI" FontSize="29" FontWeight="SemiBold"/>
+                                </Viewbox>
+                                <TextBlock x:Name="LockedValue" Foreground="{DynamicResource Secondary}" FontSize="10" TextTrimming="CharacterEllipsis"/>
+                                <Border Height="1" Background="{DynamicResource Line}" Margin="0,6"/>
+                                <TextBlock Text="前台时长" Foreground="{DynamicResource Muted}" FontSize="12"
+                                           ToolTip="解锁且亮屏时，应用获得前台焦点的时间，包括无操作期间，不含本软件。"/>
+                                <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left" Height="32">
+                                    <TextBlock x:Name="RawForegroundValue" Text="—" FontFamily="Segoe UI, Microsoft YaHei UI" FontSize="29" FontWeight="SemiBold"/>
+                                </Viewbox>
+                                <TextBlock x:Name="RawForegroundCaption" Text="包括空闲 · 不含本软件" Foreground="{DynamicResource Secondary}" FontSize="10"/>
+                            </StackPanel>
+                        </Border>
+                      </Grid>
+                    </Grid>
+                </Border>
+                <Grid x:Name="MetricToolbar" Margin="0,0,0,11">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                     <WrapPanel VerticalAlignment="Center">
-                        <Button x:Name="TodayButton" Content="今天" Style="{StaticResource RoundButton}" Click="Today_Click" Margin="0,0,7,5"/>
-                        <Button x:Name="YesterdayButton" Content="昨天" Style="{StaticResource RoundButton}" Click="Yesterday_Click" Margin="0,0,7,5"/>
-                        <Button x:Name="WeekButton" Content="近 7 天" Style="{StaticResource RoundButton}" Click="Week_Click" Margin="0,0,10,5"/>
-                        <DatePicker x:Name="DateSelector" Width="125" Height="34" SelectedDateChanged="Date_Changed" VerticalContentAlignment="Center" Margin="0,0,7,5"/>
-                        <Button Content="↻" Style="{StaticResource RoundButton}" Padding="11,8" ToolTip="刷新记录" Click="Refresh_Click" Margin="0,0,0,5"/>
+                        <TextBlock Text="使用明细" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="MetricHintText" FontSize="12" Foreground="{DynamicResource Secondary}" VerticalAlignment="Center"
+                                   TextWrapping="Wrap" Margin="10,0,8,0"/>
                     </WrapPanel>
-                    <Button Grid.Column="1" Content="↗  导出 CSV" Style="{StaticResource RoundButton}" VerticalAlignment="Top" Click="Export_Click"/>
-                </Grid>
-                <Grid x:Name="MetricToolbar" Margin="0,0,0,18">
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <TextBlock Text="图表与排行" FontSize="11" Foreground="{DynamicResource Muted}" VerticalAlignment="Center" Margin="0,0,12,0"/>
-                        <Button x:Name="ActiveMetricButton" Content="活跃时长" Style="{StaticResource RoundButton}" Click="ActiveMetric_Click" Margin="0,0,7,0"/>
-                        <Button x:Name="ForegroundMetricButton" Content="前台时长" Style="{StaticResource RoundButton}" Click="ForegroundMetric_Click" Margin="0,0,7,0"/>
-                        <Button x:Name="VisibleMetricButton" Content="可见时长" Style="{StaticResource RoundButton}" Click="VisibleMetric_Click"/>
-                    </StackPanel>
-                    <TextBlock Grid.Column="1" x:Name="MetricHintText" FontSize="10" Foreground="{DynamicResource Secondary}" VerticalAlignment="Center" TextWrapping="Wrap" Margin="16,0,0,0"/>
-                </Grid>
-                <StackPanel x:Name="OverviewPanel">
-                    <Grid Margin="0,0,0,18">
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="14"/><ColumnDefinition Width="*"/><ColumnDefinition Width="14"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                        <Border Style="{StaticResource Card}"><StackPanel>
-                            <TextBlock Text="亮屏时长" Foreground="{DynamicResource Muted}" FontSize="12" ToolTip="Windows 报告显示状态为开启或变暗的累计时间，包含锁屏亮屏，多屏不叠加。"/>
-                            <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left" Height="35" Margin="0,13,0,9"><TextBlock x:Name="ScreenValue" Text="—" FontSize="26" FontWeight="SemiBold"/></Viewbox>
-                            <TextBlock x:Name="LockedValue" Foreground="{DynamicResource Secondary}" FontSize="10"/>
-                        </StackPanel></Border>
-                        <Border Grid.Column="2" Style="{StaticResource Card}" Background="{DynamicResource AccentFill}" BorderThickness="0"><StackPanel>
-                            <TextBlock Text="活跃时长" Foreground="{DynamicResource OnAccent}" FontSize="12" ToolTip="从前台时长中扣除超过空闲阈值的部分。活跃状态由操作时间推测，不代表持续专注。"/>
-                            <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left" Height="35" Margin="0,13,0,9"><TextBlock x:Name="ForegroundValue" Text="—" Foreground="White" FontSize="26" FontWeight="SemiBold"/></Viewbox>
-                            <TextBlock Text="按记录时的空闲规则估算" Foreground="{DynamicResource OnAccent}" Opacity="0.85" FontSize="10"/>
-                        </StackPanel></Border>
-                        <Border Grid.Column="4" Style="{StaticResource Card}"><StackPanel>
-                            <TextBlock Text="前台时长" Foreground="{DynamicResource Muted}" FontSize="12" ToolTip="解锁且亮屏时，应用获得前台焦点的时间，包括无操作期间；不含本软件。"/>
-                            <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left" Height="35" Margin="0,13,0,9"><TextBlock x:Name="RawForegroundValue" Text="—" FontSize="25" FontWeight="SemiBold"/></Viewbox>
-                            <TextBlock x:Name="RawForegroundCaption" Text="包括空闲 · 不含本软件" Foreground="{DynamicResource Secondary}" FontSize="10"/>
-                        </StackPanel></Border>
-                    </Grid>
-                    <Border Style="{StaticResource Card}" Margin="0,0,0,18">
-                        <StackPanel>
-                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                <StackPanel><TextBlock x:Name="ChartTitle" Text="一天中的使用分布" FontSize="14" FontWeight="SemiBold"/><TextBlock x:Name="ChartCaption" Text="按小时查看亮屏与活跃时长" FontSize="10" Foreground="{DynamicResource Muted}" Margin="0,5,0,0"/></StackPanel>
-                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top"><Border Width="7" Height="7" CornerRadius="2" Background="{DynamicResource ChartScreen}" Margin="0,4,5,0" VerticalAlignment="Top"/><TextBlock Text="亮屏" FontSize="10" Foreground="{DynamicResource Muted}" Margin="0,0,15,0"/><Border Width="7" Height="7" CornerRadius="2" Background="{DynamicResource Accent}" Margin="0,4,5,0" VerticalAlignment="Top"/><TextBlock x:Name="ChartMetricLegend" Text="活跃" FontSize="10" Foreground="{DynamicResource Muted}" Margin="0,0,15,0"/><TextBlock Text="▧  未记录" FontSize="10" Foreground="{DynamicResource Secondary}"/></StackPanel>
-                            </Grid>
-                            <local:UsageChart x:Name="MainChart" Height="168" Margin="0,17,0,0"/>
-                            <TextBlock x:Name="CoverageText" FontSize="10" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,12,0,0"/>
+                    <Border Grid.Column="1" Background="{DynamicResource GlassControl}" BorderBrush="{DynamicResource GlassEdge}"
+                            BorderThickness="1" CornerRadius="14" Padding="3">
+                        <StackPanel Orientation="Horizontal">
+                            <RadioButton GroupName="Metric" x:Name="ActiveMetricButton" Content="活跃" Style="{StaticResource ChoiceButton}" Padding="11,4" Checked="ActiveMetric_Checked"/>
+                            <RadioButton GroupName="Metric" x:Name="ForegroundMetricButton" Content="前台" Style="{StaticResource ChoiceButton}" Padding="11,4" Checked="ForegroundMetric_Checked" Margin="3,0"/>
+                            <RadioButton GroupName="Metric" x:Name="VisibleMetricButton" Content="可见" Style="{StaticResource ChoiceButton}" Padding="11,4" Checked="VisibleMetric_Checked"/>
                         </StackPanel>
                     </Border>
+                </Grid>
+                <StackPanel x:Name="OverviewPanel">
                     <Grid>
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="1.65*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                        <Border Style="{StaticResource Card}"><StackPanel>
-                            <Grid Margin="0,0,0,13"><TextBlock Text="时间花在哪里" FontSize="14" FontWeight="SemiBold"/><Button Content="查看全部  →" Style="{StaticResource RoundButton}" BorderThickness="0" Foreground="{DynamicResource Accent}" Padding="0" HorizontalAlignment="Right" FontSize="10" Click="AllApps_Click"/></Grid>
-                            <StackPanel x:Name="TopAppsHost"/>
-                        </StackPanel></Border>
-                        <Border Grid.Column="2" Style="{StaticResource Card}" Background="{DynamicResource CardAltBackground}"><StackPanel>
-                            <TextBlock Text="此刻正在记录" FontSize="14" FontWeight="SemiBold"/>
-                            <TextBlock x:Name="CurrentAppText" Text="尚未开始" FontSize="18" FontWeight="Medium" TextWrapping="Wrap" Margin="0,20,0,6"/>
-                            <TextBlock x:Name="DisplayStateText" Text="等待系统状态" FontSize="11" Foreground="{DynamicResource Muted}" TextWrapping="Wrap"/>
-                            <Border Height="1" Background="{DynamicResource Line}" Margin="0,18,0,15"/>
-                            <TextBlock x:Name="ForegroundRuleText" FontSize="11" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" LineHeight="19"/>
-                        </StackPanel></Border>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="1.48*"/><ColumnDefinition Width="13"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock x:Name="ChartTitle" Text="分时使用" FontSize="16" FontWeight="SemiBold"/>
+                                        <TextBlock x:Name="ChartCaption" Foreground="{DynamicResource Muted}" FontSize="12" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top" Margin="6,2,0,0">
+                                        <Border Width="8" Height="8" CornerRadius="2" BorderBrush="{DynamicResource ChartScreenStroke}" BorderThickness="1" Margin="0,0,5,0"/>
+                                        <TextBlock Text="亮屏" FontSize="12" Foreground="{DynamicResource Muted}" Margin="0,0,10,0"/>
+                                        <Border Width="8" Height="8" CornerRadius="2" Background="{DynamicResource ChartForeground}" Margin="0,0,5,0"/>
+                                        <TextBlock x:Name="ChartMetricLegend" Text="活跃" FontSize="12" Foreground="{DynamicResource Muted}"/>
+                                    </StackPanel>
+                                </Grid>
+                                <local:UsageChart x:Name="MainChart" Height="182" Margin="0,11,0,0"/>
+                                <Border Height="1" Background="{DynamicResource Line}" Margin="0,5,0,10"/>
+                                <TextBlock x:Name="CoverageText" FontSize="12" Foreground="{DynamicResource Muted}" TextWrapping="Wrap"/>
+                                <DockPanel Margin="0,8,0,0" LastChildFill="True">
+                                    <Button x:Name="ChartDetailsButton" DockPanel.Dock="Right" Content="数据明细" Click="ChartDetails_Click"
+                                            Style="{StaticResource RoundButton}" Padding="10,4" Margin="8,0,0,0"/>
+                                    <TextBlock Text="斜纹：未记录或部分记录 · 浅底：未来时段" TextWrapping="Wrap" VerticalAlignment="Center"
+                                               FontSize="11" Foreground="{DynamicResource Secondary}"/>
+                                </DockPanel>
+                            </StackPanel>
+                        </Border>
+                        <Border Grid.Column="2" Style="{StaticResource Card}">
+                            <StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                    <TextBlock Text="应用排行" FontSize="16" FontWeight="SemiBold"/>
+                                    <Button Grid.Column="1" Content="查看全部  ›" Style="{StaticResource RoundButton}" BorderThickness="0"
+                                            Foreground="{DynamicResource Accent}" Background="Transparent" Padding="0" FontSize="11" Click="AllApps_Click"/>
+                                </Grid>
+                                <TextBlock x:Name="TopAppsCaption" FontSize="12" Foreground="{DynamicResource Muted}" Margin="0,4,0,8"/>
+                                <StackPanel x:Name="TopAppsHost"/>
+                            </StackPanel>
+                        </Border>
                     </Grid>
+                    <Border Style="{StaticResource Card}" Background="{DynamicResource GlassControl}" BorderBrush="{DynamicResource GlassEdge}"
+                            CornerRadius="13" Padding="11,9" Margin="0,11,0,0" ToolTip="{Binding Text, ElementName=ForegroundRuleText}">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="当前记录" FontSize="11" Foreground="{DynamicResource Muted}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <TextBlock Grid.Column="1" x:Name="CurrentAppText" Text="尚未开始" FontSize="12" FontWeight="SemiBold"
+                                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+                            <TextBlock Grid.Column="2" x:Name="DisplayStateText" Text="等待系统状态" FontSize="11"
+                                       Foreground="{DynamicResource Muted}" TextTrimming="CharacterEllipsis" MaxWidth="180" Margin="8,0,0,0"/>
+                            <TextBlock x:Name="ForegroundRuleText" Visibility="Collapsed"/>
+                        </Grid>
+                    </Border>
                 </StackPanel>
                 <StackPanel x:Name="AppsPanel" Visibility="Collapsed">
                     <Border Style="{StaticResource Card}" Margin="0,0,0,16"><StackPanel>
                         <Grid Margin="0,0,0,20"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="230"/></Grid.ColumnDefinitions>
                             <StackPanel Margin="0,0,15,0"><TextBlock Text="应用使用时长对比" FontSize="16" FontWeight="SemiBold"/><TextBlock x:Name="AppBarCaptionText" FontSize="11" Foreground="{DynamicResource Muted}" Margin="0,6,0,0" TextWrapping="Wrap"/></StackPanel>
-                            <TextBox x:Name="SearchBox" Grid.Column="1" TextChanged="Search_Changed" ToolTip="搜索应用名称，同时筛选柱状图与列表" VerticalAlignment="Center"/>
+                            <StackPanel Grid.Column="1">
+                                <Label Content="搜索应用" Target="{Binding ElementName=SearchBox}" Padding="0,0,0,5"
+                                       Foreground="{DynamicResource Muted}" FontSize="12"/>
+                                <TextBox x:Name="SearchBox" TextChanged="Search_Changed" AutomationProperties.Name="搜索应用名称"/>
+                            </StackPanel>
                         </Grid>
                         <local:AppUsageBarChart x:Name="AppsBarChart"/>
                         <TextBlock x:Name="AppBarCoverageText" FontSize="10" Foreground="{DynamicResource Secondary}" TextWrapping="Wrap" Margin="0,13,0,0"/>
@@ -218,17 +286,17 @@
                 <StackPanel x:Name="SettingsPanel" Visibility="Collapsed">
                     <Border Style="{StaticResource Card}" Margin="0,0,0,16"><StackPanel>
                         <TextBlock Text="关于屏幕时间" FontSize="15" FontWeight="SemiBold"/>
-                        <TextBlock Text="屏幕时间是一款本地运行的 Windows 使用时间统计工具。它记录亮屏、应用前台与活跃时间，并通过可见时间补充并排窗口和多显示器场景，帮助你了解时间花在哪里。" Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap" LineHeight="21" Margin="0,16,0,0"/>
-                        <TextBlock Text="支持日期与近七天统计、应用柱状图、桌面小组件、空闲过滤和 CSV 导出。数据保存在本机，不读取窗口标题、网页地址或按键内容。" Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap" LineHeight="21" Margin="0,10,0,0"/>
-                        <TextBlock Text="版本 0.5.1 · 开源许可：MIT" Foreground="{DynamicResource Secondary}" FontSize="10" Margin="0,12,0,0"/>
+                        <TextBlock Text="屏幕时间是一款本地运行的 Windows 使用时间统计工具。它记录亮屏、应用前台与活跃时间，并通过可见时间补充并排窗口和多显示器场景，帮助你了解时间花在哪里。" Foreground="{DynamicResource Muted}" FontSize="13" TextWrapping="Wrap" LineHeight="23" Margin="0,16,0,0"/>
+                        <TextBlock Text="支持日期与近七天统计、应用柱状图、桌面小组件、空闲过滤和 CSV 导出。数据保存在本机，不读取窗口标题、网页地址或按键内容。" Foreground="{DynamicResource Muted}" FontSize="13" TextWrapping="Wrap" LineHeight="23" Margin="0,10,0,0"/>
+                        <TextBlock Text="版本 0.5.1 · 开源许可：MIT" Foreground="{DynamicResource Secondary}" FontSize="13" Margin="0,12,0,0"/>
                     </StackPanel></Border>
                     <Border Style="{StaticResource Card}" Margin="0,0,0,16"><StackPanel>
                         <TextBlock Text="常驻与启动" FontSize="15" FontWeight="SemiBold"/>
                         <CheckBox x:Name="AutoStartCheck" Content="开机自启（登录 Windows 后启动）" FontSize="12" Margin="0,21,0,10" Checked="AutoStart_Changed" Unchecked="AutoStart_Changed"/>
                         <CheckBox x:Name="AutoStartWidgetCheck" Content="开机自启时显示小组件" FontSize="12" Margin="0,8,0,8" Checked="AutoStartWidget_Changed" Unchecked="AutoStartWidget_Changed"/>
-                        <TextBlock Text="默认开启；登录后直接显示小组件。关闭则只在托盘运行。需同时开启上方的开机自启。" Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                        <TextBlock Text="默认开启；登录后直接显示小组件。关闭则只在托盘运行。需同时开启上方的开机自启。" Foreground="{DynamicResource Muted}" FontSize="13" TextWrapping="Wrap" Margin="0,0,0,8"/>
                         <CheckBox x:Name="AutoRecordCheck" Content="打开软件自动开始记录" FontSize="12" Margin="0,12,0,8" Checked="AutoRecord_Changed" Unchecked="AutoRecord_Changed"/>
-                        <TextBlock Text="下次启动生效。关闭后，打开软件会等待你手动开始；开机自启与此选项互相独立。" Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,16"/>
+                        <TextBlock Text="下次启动生效。关闭后，打开软件会等待你手动开始；开机自启与此选项互相独立。" Foreground="{DynamicResource Muted}" FontSize="13" TextWrapping="Wrap" Margin="0,0,0,16"/>
                         <StackPanel Orientation="Horizontal" Margin="0,5,0,14">
                             <TextBlock Text="外观" FontSize="12" VerticalAlignment="Center" Margin="0,0,20,0"/>
                             <ComboBox x:Name="ThemeSelector" Style="{StaticResource IdleRuleSelector}" Width="180" Height="32" SelectedValuePath="Tag" SelectionChanged="Theme_Changed" AutomationProperties.Name="外观主题">
@@ -237,47 +305,47 @@
                         </StackPanel>
                         <CheckBox x:Name="TopmostCheck" Content="完整面板始终置顶" FontSize="12" Margin="0,5,0,16" Checked="Topmost_Changed" Unchecked="Topmost_Changed"/>
                         <CheckBox x:Name="WidgetModeCheck" Content="桌面小组件" FontSize="12" Margin="0,5,0,10" Checked="WidgetMode_Changed" Unchecked="WidgetMode_Changed"/>
-                        <TextBlock Text="在桌面显示精简卡片，不显示任务栏图标；双击打开完整面板，右键可锁定位置或切换悬浮置顶。托盘菜单可重新唤出组件。" Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,16"/>
+                        <TextBlock Text="在桌面显示精简卡片，不显示任务栏图标；双击打开完整面板，右键可锁定位置或切换悬浮置顶。托盘菜单可重新唤出组件。" Foreground="{DynamicResource Muted}" FontSize="13" TextWrapping="Wrap" Margin="0,0,0,16"/>
                         <Button Content="隐藏窗口，后台记录" Style="{StaticResource RoundButton}" HorizontalAlignment="Left" Click="Background_Click" Margin="0,0,0,14"/>
-                        <TextBlock Text="关闭主窗口后仍在托盘记录。要停止后台运行，请在托盘菜单选择“退出”。&#10;手动暂停对本次运行有效，下次是否记录由“自动开始记录”决定。" Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap" LineHeight="22"/>
+                        <TextBlock Text="关闭主窗口后仍在托盘记录。要停止后台运行，请在托盘菜单选择“退出”。&#10;手动暂停对本次运行有效，下次是否记录由“自动开始记录”决定。" Foreground="{DynamicResource Muted}" FontSize="13" TextWrapping="Wrap" LineHeight="22"/>
                     </StackPanel></Border>
                     <Border Style="{StaticResource Card}" Margin="0,0,0,16"><StackPanel>
                         <TextBlock Text="应用计时" FontSize="15" FontWeight="SemiBold"/>
                         <CheckBox x:Name="VisibilityDetectionCheck" Content="统计多个窗口的可见时间" FontSize="12" Margin="0,18,0,8" Checked="VisibilityDetection_Changed" Unchecked="VisibilityDetection_Changed"/>
-                        <TextBlock Text="单独统计解锁亮屏时的窗口展示时间，不受空闲过滤影响；同应用多窗口合并，不同应用允许并行。仅保存小时累计，不保存画面或窗口标题。关闭后释放相关监听，已有记录保留。" Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap" LineHeight="21"/>
+                        <TextBlock Text="单独统计解锁亮屏时的窗口展示时间，不受空闲过滤影响；同应用多窗口合并，不同应用允许并行。仅保存小时累计，不保存画面或窗口标题。关闭后释放相关监听，已有记录保留。" Foreground="{DynamicResource Muted}" FontSize="13" TextWrapping="Wrap" LineHeight="23"/>
                         <CheckBox x:Name="IdleFilterCheck" Content="从活跃时长中排除空闲" FontSize="12" Margin="0,20,0,10" Checked="IdleFilter_Changed" Unchecked="IdleFilter_Changed"/>
                         <StackPanel Orientation="Horizontal" Margin="0,2,0,12">
-                            <TextBlock Text="连续无操作" FontSize="11" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                            <TextBlock Text="连续无操作" FontSize="13" VerticalAlignment="Center" Margin="0,0,12,0"/>
                             <ComboBox x:Name="IdleTimeoutSelector" Style="{StaticResource IdleRuleSelector}" Width="110" Height="30" SelectedValuePath="Tag" SelectionChanged="IdleTimeout_Changed" AutomationProperties.Name="空闲时间阈值">
                                 <ComboBoxItem Content="1 分钟" Tag="1"/><ComboBoxItem Content="3 分钟" Tag="3"/><ComboBoxItem Content="5 分钟" Tag="5"/><ComboBoxItem Content="10 分钟" Tag="10"/><ComboBoxItem Content="15 分钟" Tag="15"/><ComboBoxItem Content="30 分钟" Tag="30"/>
                             </ComboBox>
-                            <TextBlock Text="后视为空闲" FontSize="11" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                            <TextBlock Text="后视为空闲" FontSize="13" VerticalAlignment="Center" Margin="12,0,0,0"/>
                         </StackPanel>
-                        <TextBlock x:Name="IdleRuleDescription" Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap" LineHeight="21"/>
+                        <TextBlock x:Name="IdleRuleDescription" Foreground="{DynamicResource Muted}" FontSize="13" TextWrapping="Wrap" LineHeight="23"/>
                         <CheckBox x:Name="MediaDetectionCheck" Content="播放媒体时保留前台活跃计时" FontSize="12" Margin="0,18,0,8" Checked="MediaDetection_Changed" Unchecked="MediaDetection_Changed"/>
-                        <TextBlock Text="按需开启，适合经常看视频。仅当系统播放来源与前台应用明确匹配时补计空闲，详情标注“媒体推测”。不计后台音乐；浏览器无法确认具体标签页。播放不能证明本人在场。追求最低占用时可关闭并重启软件。" Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap" LineHeight="21"/>
+                        <TextBlock Text="按需开启，适合经常看视频。仅当系统播放来源与前台应用明确匹配时补计空闲，详情标注“媒体推测”。不计后台音乐；浏览器无法确认具体标签页。播放不能证明本人在场。追求最低占用时可关闭并重启软件。" Foreground="{DynamicResource Muted}" FontSize="13" TextWrapping="Wrap" LineHeight="23"/>
                         <CheckBox x:Name="GamepadDetectionCheck" Content="识别手柄输入（按需开启）" FontSize="12" Margin="0,16,0,8" Checked="GamepadDetection_Changed" Unchecked="GamepadDetection_Changed"/>
-                        <TextBlock Text="支持 XInput 手柄。仅连接不算操作；摇杆使用死区过滤。未连接时每 5 秒探测，连接后每 0.25 秒检查有效输入，只作用于当时的前台应用。" Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap" LineHeight="21"/>
+                        <TextBlock Text="支持 XInput 手柄。仅连接不算操作；摇杆使用死区过滤。未连接时每 5 秒探测，连接后每 0.25 秒检查有效输入，只作用于当时的前台应用。" Foreground="{DynamicResource Muted}" FontSize="13" TextWrapping="Wrap" LineHeight="23"/>
                     </StackPanel></Border>
                     <Border Style="{StaticResource Card}" Margin="0,0,0,16"><StackPanel>
                         <TextBlock Text="本地数据" FontSize="15" FontWeight="SemiBold"/>
-                        <TextBlock Text="数据文件夹" Foreground="{DynamicResource Muted}" FontSize="11" Margin="0,20,0,7"/>
-                        <TextBlock x:Name="DataPathText" FontSize="11" TextWrapping="Wrap"/>
+                        <TextBlock Text="数据文件夹" Foreground="{DynamicResource Muted}" FontSize="13" Margin="0,20,0,7"/>
+                        <TextBlock x:Name="DataPathText" FontSize="13" TextWrapping="Wrap"/>
                         <Button Content="打开文件夹  ↗" Style="{StaticResource RoundButton}" HorizontalAlignment="Left" Margin="0,12,0,17" Click="OpenData_Click"/>
-                        <TextBlock x:Name="TimeZoneText" Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap"/>
-                        <TextBlock Text="片段与小时明细保留 90 天，每日汇总保留 365 天。数据不上传。" Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,20"/>
+                        <TextBlock x:Name="TimeZoneText" Foreground="{DynamicResource Muted}" FontSize="13" TextWrapping="Wrap"/>
+                        <TextBlock Text="片段与小时明细保留 90 天，每日汇总保留 365 天。数据不上传。" Foreground="{DynamicResource Muted}" FontSize="13" TextWrapping="Wrap" Margin="0,8,0,20"/>
                         <WrapPanel><Button Content="导出选定范围 CSV" Style="{StaticResource RoundButton}" Click="Export_Click" Margin="0,0,10,8"/><Button Content="删除选定日期" Style="{StaticResource RoundButton}" Click="DeleteDate_Click" Margin="0,0,10,8"/><Button Content="删除全部记录" Style="{StaticResource RoundButton}" Foreground="{DynamicResource Danger}" Click="DeleteAll_Click" Margin="0,0,0,8"/></WrapPanel>
-                        <TextBlock x:Name="SelectedRangeText" Foreground="{DynamicResource Secondary}" FontSize="10" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                        <TextBlock x:Name="SelectedRangeText" Foreground="{DynamicResource Secondary}" FontSize="13" Margin="0,6,0,0" TextWrapping="Wrap"/>
                     </StackPanel></Border>
                     <Border Style="{StaticResource Card}"><StackPanel>
                         <TextBlock Text="这些数字意味着什么" FontSize="15" FontWeight="SemiBold"/>
-                        <TextBlock Text="亮屏时长：Windows 报告显示处于开启或变暗的时间，包含锁屏亮屏，多屏不叠加。&#10;&#10;前台时长：解锁且亮屏时，应用获得前台焦点的时间，包含空闲；查看本软件时只累计亮屏。后台音乐、下载和并排但未获焦点的窗口不重复累计。&#10;&#10;活跃时长：按记录时的空闲设置，从前台时长中扣除超过阈值的无操作区间。它是估计值，阅读、视频和手柄操作可能被判为空闲。&#10;&#10;旧版本记录未保留空闲时的应用归属。包含旧记录时，前台时长显示“≥”，表示至少已有这么长，不能精确补算。&#10;&#10;未记录：暂停、程序未运行或状态未知的区间，不能解释为零使用。首次启用前的历史无法追溯。外接显示器的物理电源状态可能与系统报告存在差异。" FontSize="11" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" LineHeight="21" Margin="0,18,0,0"/>
+                        <TextBlock Text="亮屏时长：Windows 报告显示处于开启或变暗的时间，包含锁屏亮屏，多屏不叠加。&#10;&#10;前台时长：解锁且亮屏时，应用获得前台焦点的时间，包含空闲；查看本软件时只累计亮屏。后台音乐、下载和并排但未获焦点的窗口不重复累计。&#10;&#10;活跃时长：按记录时的空闲设置，从前台时长中扣除超过阈值的无操作区间。它是估计值，阅读、视频和手柄操作可能被判为空闲。&#10;&#10;旧版本记录未保留空闲时的应用归属。包含旧记录时，前台时长显示“≥”，表示至少已有这么长，不能精确补算。&#10;&#10;未记录：暂停、程序未运行或状态未知的区间，不能解释为零使用。首次启用前的历史无法追溯。外接显示器的物理电源状态可能与系统报告存在差异。" FontSize="13" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" LineHeight="23" Margin="0,18,0,0"/>
                         <Border Height="1" Background="{DynamicResource Line}" Margin="0,22,0,15"/>
-                        <TextBlock Text="屏幕时间 0.5.1 · 本地优先的 Windows 使用记录" Foreground="{DynamicResource Secondary}" FontSize="10"/>
+                        <TextBlock Text="屏幕时间 0.5.1 · 本地优先的 Windows 使用记录" Foreground="{DynamicResource Secondary}" FontSize="13"/>
                         <Button Content="退出程序" Style="{StaticResource RoundButton}" HorizontalAlignment="Left" Margin="0,15,0,0" Click="Exit_Click" ToolTip="停止记录并退出（Ctrl+Q）"/>
                     </StackPanel></Border>
                 </StackPanel>
-                <TextBlock Text="每一刻，都有迹可循。" Foreground="{DynamicResource Secondary}" HorizontalAlignment="Center" FontSize="10" Margin="0,25,0,0"/>
+
             </StackPanel>
         </ScrollViewer>
     </Grid>

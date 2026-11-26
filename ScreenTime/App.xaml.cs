@@ -14,10 +14,11 @@ public partial class App : Application
     private RegisteredWaitHandle? _activationWait;
     private AppController? _controller;
     private Forms.NotifyIcon? _tray;
+    private TrayMenu? _trayMenu;
     private MainWindow? _window;
     private WidgetWindow? _widget;
-    private Forms.ToolStripMenuItem? _pauseItem;
-    private Forms.ToolStripMenuItem? _widgetItem;
+    private TrayMenu.CommandItem? _pauseItem;
+    private TrayMenu.CommandItem? _widgetItem;
     private bool _widgetMode;
     private bool _shuttingDown;
     private bool _quietWidgetStart;
@@ -112,20 +113,19 @@ public partial class App : Application
     private void SetupTray()
     {
         if (_controller == null) return;
-        var menu = new Forms.ContextMenuStrip();
-        menu.Items.Add("打开屏幕时间", null, (_, _) => ShowPanel());
-        _widgetItem = new Forms.ToolStripMenuItem("显示小组件", null, (_, _) =>
+        var menu = new TrayMenu(() => _controller.DarkMode);
+        _trayMenu = menu;
+        menu.AddCommand("打开屏幕时间", "\uE8A7", (_, _) => ShowPanel());
+        _widgetItem = menu.AddCommand("显示小组件", "\uE8A9", (_, _) =>
         {
             try { RevealWidget(); }
             catch (Exception ex) { MessageBox.Show("组件设置未保存：" + ex.Message, "屏幕时间", MessageBoxButton.OK, MessageBoxImage.Warning); }
         });
-        menu.Items.Add(_widgetItem);
-        menu.Items.Add("隐藏窗口，后台记录", null, (_, _) => RunInBackground());
-        _pauseItem = new Forms.ToolStripMenuItem("开始记录", null, (_, _) => _controller.TogglePause());
-        menu.Items.Add(_pauseItem);
+        menu.AddCommand("隐藏窗口，后台记录", "\uE921", (_, _) => RunInBackground());
+        _pauseItem = menu.AddCommand("开始记录", "\uE768", (_, _) => _controller.TogglePause());
         menu.Items.Add(new Forms.ToolStripSeparator());
-        menu.Items.Add("打开数据文件夹", null, (_, _) => _controller.OpenDataDirectory());
-        menu.Items.Add("退出", null, (_, _) => _controller.Exit());
+        menu.AddCommand("打开数据文件夹", "\uE8B7", (_, _) => _controller.OpenDataDirectory());
+        menu.AddCommand("退出", "\uE8BB", (_, _) => _controller.Exit());
         var icon = System.Drawing.Icon.ExtractAssociatedIcon(Environment.ProcessPath ?? "ScreenTime.exe") ?? System.Drawing.SystemIcons.Application;
         _tray = new Forms.NotifyIcon { Icon = icon, Text = "屏幕时间 · 尚未开始", Visible = true, ContextMenuStrip = menu };
         _tray.DoubleClick += (_, _) => ShowPanel();
@@ -137,7 +137,9 @@ public partial class App : Application
         if (_controller == null || _tray == null || _pauseItem == null) return;
         var text = "屏幕时间 · " + _controller.StatusText;
         _tray.Text = text.Length > 63 ? text.Substring(0, 63) : text;
-        _pauseItem.Text = !_controller.IsRecordingEnabled ? "开始记录" : _controller.IsPaused ? "恢复记录" : "暂停记录";
+        var recording = _controller.IsRecordingEnabled && !_controller.IsPaused;
+        _pauseItem.Text = recording ? "暂停记录" : _controller.IsRecordingEnabled ? "恢复记录" : "开始记录";
+        _pauseItem.Glyph = recording ? "\uE769" : "\uE768";
         if (_widgetItem != null) _widgetItem.Checked = _controller.WidgetEnabled;
     }
     private void UpdateWidgetMode()
@@ -238,9 +240,14 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         _shuttingDown = true;
-        if (_controller != null) _controller.Updated -= UpdateWidgetMode;
+        if (_controller != null)
+        {
+            _controller.Updated -= UpdateWidgetMode;
+            _controller.Updated -= UpdateTray;
+        }
         _controller?.Dispose();
         if (_tray != null) { _tray.Visible = false; _tray.Dispose(); }
+        _trayMenu?.Dispose();
         _activationWait?.Unregister(null);
         _activation?.Dispose();
         if (_mutex != null) { try { _mutex.ReleaseMutex(); } catch (ApplicationException) { } _mutex.Dispose(); }

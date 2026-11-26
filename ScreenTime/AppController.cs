@@ -334,7 +334,7 @@ public sealed class AppController : IAppController, IDisposable
         var widget = System.Windows.Application.Current?.Windows.OfType<WidgetWindow>().FirstOrDefault();
         var snapshot = new
         {
-            Version = "0.5.1", ProcessId = Environment.ProcessId,
+            Version = "0.5.2", ProcessId = Environment.ProcessId,
             DashboardWindows = System.Windows.Application.Current?.Windows.OfType<MainWindow>().Count(),
             FullGcCollections = GC.CollectionCount(GC.MaxGeneration),
             Runtime = Environment.Version.ToString(), UpdatedAt = DateTimeOffset.Now,
