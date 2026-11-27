@@ -37,7 +37,12 @@ public sealed class VisibleUsageStore
     { _directory = directory; _zone = zone; }
     private string PathFor(string key) => Path.Combine(_directory, key + ".json");
     private DateTime Today => TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, _zone).Date;
-    private DateTimeOffset Boundary(DateTime date) => TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(date, DateTimeKind.Unspecified), _zone);
+    private DateTimeOffset Boundary(DateTime date)
+    {
+        DateTime value = DateTime.SpecifyKind(date, DateTimeKind.Unspecified);
+        while (_zone.IsInvalidTime(value)) value = value.AddMinutes(1);
+        return new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(value, _zone), TimeSpan.Zero);
+    }
     private VisibleDay? Load(string key, bool create = false)
     {
         if (!_cache.TryGetValue(key, out var day))
@@ -97,11 +102,20 @@ public sealed class VisibleUsageStore
     private void AddHours(double[]? hours, DateTimeOffset start, DateTimeOffset end, double rate)
     {
         if (hours == null) return;
+        var startLocal = TimeZoneInfo.ConvertTime(start, _zone);
+        var endLocal = TimeZoneInfo.ConvertTime(end, _zone);
+        if (startLocal.Date == endLocal.Date && startLocal.Hour == endLocal.Hour && startLocal.Offset == endLocal.Offset)
+        {
+            hours[startLocal.Hour] += (end - start).TotalSeconds * rate;
+            return;
+        }
         for (var cursor = start; cursor < end;)
         {
+            var local = TimeZoneInfo.ConvertTime(cursor, _zone);
             var next = cursor.AddMinutes(1).AddSeconds(-cursor.Second).AddTicks(-(cursor.Ticks % TimeSpan.TicksPerSecond));
+            if (next <= cursor) next = cursor.AddMinutes(1);
             if (next > end) next = end;
-            hours[TimeZoneInfo.ConvertTime(cursor, _zone).Hour] += (next - cursor).TotalSeconds * rate;
+            hours[local.Hour] += (next - cursor).TotalSeconds * rate;
             cursor = next;
         }
     }

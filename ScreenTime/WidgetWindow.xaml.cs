@@ -138,13 +138,15 @@ public partial class WidgetWindow : Window
             WidgetDate.Text = _controller.Today.ToString("M月d日", CultureInfo.GetCultureInfo("zh-CN"));
             WidgetScreen.Text = day.HasData ? ShortDuration(day.ScreenSeconds) : "—";
             DurationTypography.Set(WidgetForeground, day.HasData ? ShortDuration(day.ForegroundSeconds) : "—");
-            WidgetRing.SetUsage(day.ForegroundSeconds, day.ScreenSeconds, day.HasData);
-            WidgetScreen.ToolTip = "今日亮屏：" + MainWindow.FormatDuration(day.ScreenSeconds);
-            WidgetForeground.ToolTip = "活跃时长：" + MainWindow.FormatDuration(day.ForegroundSeconds) + "，按记录时的空闲规则估算，不含本软件。";
+            double? pct = day.HasData && day.ScreenSeconds > 0 ? Math.Clamp(day.ForegroundSeconds / day.ScreenSeconds, 0, 1) : null;
+            WidgetPctText.Text = pct.HasValue ? pct.Value.ToString("P0", CultureInfo.GetCultureInfo("zh-CN")) : "—";
+            string heroTip = day.HasData
+                ? $"今日活跃 {MainWindow.FormatDuration(day.ForegroundSeconds)}\n亮屏 {MainWindow.FormatDuration(day.ScreenSeconds)} · 前台 {MainWindow.FormatForegroundDuration(day.RawForegroundSeconds, day.HasLegacyActivity)}"
+                : "开始记录后显示今日统计";
+            WidgetForeground.ToolTip = heroTip;
+            WidgetPctBadge.ToolTip = heroTip;
+            AutomationProperties.SetName(WidgetPctBadge, "活跃时长占亮屏时长 " + WidgetPctText.Text);
             WidgetRawForeground.Text = day.HasData ? "前台 " + (day.HasLegacyActivity ? "≥ " : "") + ShortDuration(day.RawForegroundSeconds) : "前台 —";
-            WidgetRawForeground.ToolTip = "前台时长：" + MainWindow.FormatForegroundDuration(day.RawForegroundSeconds, day.HasLegacyActivity) + "，包含空闲，不含本软件。" +
-                (day.HasLegacyActivity ? "\n" + MainWindow.LegacyActivityExplanation : "");
-            AutomationProperties.SetName(WidgetRawForeground, WidgetRawForeground.ToolTip.ToString());
             WidgetChart.MetricLabel = "活跃";
             WidgetChart.MetricIsLowerBound = false;
             WidgetChart.SetData(day.ScreenHourly, day.ForegroundHourly, Enumerable.Range(0, 24).Select(h => h.ToString("00")).ToArray(), day.HasData, "开始后显示实际记录");
@@ -177,37 +179,30 @@ public partial class WidgetWindow : Window
 
     private sealed class WidgetAppRow
     {
-        public readonly Grid Root = new() { Height = 23 };
-        public readonly Border Icon = new() { Width = 17, Height = 17, CornerRadius = new CornerRadius(5), VerticalAlignment = VerticalAlignment.Center };
-        public readonly TextBlock Name = new() { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(8, 0, 8, 0) };
-        public readonly TextBlock Duration = new() { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right };
-        public readonly Border Track = new() { Height = 3, CornerRadius = new CornerRadius(2), Margin = new Thickness(0, 0, 8, 0) };
-        public readonly Border Fill = new() { Height = 3, CornerRadius = new CornerRadius(2), HorizontalAlignment = HorizontalAlignment.Left };
+        private static readonly string[] FallbackColors = { "#6373F2", "#34B89A", "#E5A04B", "#4A9CE8", "#D46E9E", "#7C8AA6" };
+        public readonly Grid Root = new() { Height = 26 };
+        public readonly Border Icon = new() { Width = 18, Height = 18, CornerRadius = new CornerRadius(5), HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
+        public readonly TextBlock Name = new() { FontSize = 13, FontWeight = FontWeights.Normal, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0) };
+        public readonly TextBlock Duration = new() { FontSize = 13, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right };
         public string? AppId;
+        public string? FallbackName;
         public ImageSource? Source;
-        private double _relativeDuration;
 
         public WidgetAppRow()
         {
-            Root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(17) });
+            Root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(25) });
             Root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            Root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(78) });
             Root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            Grid.SetColumn(Name, 1); Grid.SetColumn(Track, 2); Grid.SetColumn(Duration, 3);
-            Track.Child = Fill;
-            Track.SetResourceReference(Border.BackgroundProperty, "Line");
-            Fill.SetResourceReference(Border.BackgroundProperty, "ChartForeground");
-            Track.SizeChanged += (_, _) => UpdateFill();
-            Root.Children.Add(Icon); Root.Children.Add(Name); Root.Children.Add(Track); Root.Children.Add(Duration);
+            Grid.SetColumn(Name, 1);
+            Grid.SetColumn(Duration, 2);
+            System.Windows.Documents.Typography.SetNumeralAlignment(Duration, FontNumeralAlignment.Tabular);
+            Root.Children.Add(Icon); Root.Children.Add(Name); Root.Children.Add(Duration);
         }
 
-        public void UpdateDuration(double seconds, double longest)
+        public static string FallbackColor(string key)
         {
-            _relativeDuration = longest > 0 ? Math.Clamp(seconds / longest, 0, 1) : 0;
-            UpdateFill();
+            unchecked { int h = 17; foreach (char c in key) h = h * 31 + c; return FallbackColors[(int)((uint)h % FallbackColors.Length)]; }
         }
-
-        private void UpdateFill() => Fill.Width = Track.ActualWidth * _relativeDuration;
     }
 
     private void UpdateAppRows(List<AppUsage> apps, bool hasLegacyActivity)
@@ -222,20 +217,31 @@ public partial class WidgetWindow : Window
             var row = _appRows[i]; row.Root.Visibility = i < apps.Count ? Visibility.Visible : Visibility.Collapsed;
             if (i >= apps.Count) continue;
             var app = apps[i];
-            row.Name.Text = app.Name; row.Name.Foreground = ThemeManager.GetBrush("Ink"); row.Name.ToolTip = app.Name;
+            string name = string.IsNullOrWhiteSpace(app.Name) ? "未识别应用" : app.Name;
+            row.Name.Text = name; row.Name.Foreground = ThemeManager.GetBrush("Ink"); row.Name.ToolTip = name;
             row.Duration.Text = ShortDuration(app.Seconds); row.Duration.Foreground = ThemeManager.GetBrush("Muted");
-            row.UpdateDuration(app.Seconds, apps[0].Seconds);
-            row.Root.ToolTip = app.Name + "\n活跃 " + MainWindow.FormatDuration(app.Seconds) + "\n前台 " + MainWindow.FormatForegroundDuration(app.ForegroundSeconds, hasLegacyActivity) +
+            row.Root.ToolTip = name + "\n活跃 " + MainWindow.FormatDuration(app.Seconds) + "\n前台 " + MainWindow.FormatForegroundDuration(app.ForegroundSeconds, hasLegacyActivity) +
                 (hasLegacyActivity ? "\n" + MainWindow.LegacyActivityExplanation : "");
-            var source = _controller.GetAppIcon(app.AppId);
-            if (row.AppId != app.AppId || row.Source != source || source == null)
+            ImageSource? source = null;
+            try { source = _controller.GetAppIcon(app.AppId); } catch { }
+            if (source != null)
             {
-                row.AppId = app.AppId; row.Source = source;
-                row.Icon.Background = ThemeManager.GetBrush("AccentSoft");
-                row.Icon.Child = source != null ? new Image { Source = source, Width = 16, Height = 16 } : new TextBlock
+                if (row.AppId != app.AppId || !ReferenceEquals(row.Source, source))
                 {
-                    Text = string.IsNullOrWhiteSpace(app.Name) ? "?" : app.Name.Substring(0, 1), FontSize = 10,
-                    Foreground = ThemeManager.GetBrush("Accent"), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center
+                    row.AppId = app.AppId; row.Source = source; row.FallbackName = null;
+                    row.Icon.Background = Brushes.Transparent;
+                    row.Icon.Child = new Image { Source = source, Width = 17, Height = 17, Stretch = Stretch.Uniform };
+                }
+            }
+            else if (row.AppId != app.AppId || row.Source != null || row.FallbackName != name)
+            {
+                row.AppId = app.AppId; row.Source = null; row.FallbackName = name;
+                row.Icon.Background = ThemeManager.LegacyBrush(WidgetAppRow.FallbackColor(app.AppId ?? name));
+                row.Icon.Child = new TextBlock
+                {
+                    Text = name.Substring(0, Math.Min(name.Length, name[0] <= 127 ? 2 : 1)).ToUpperInvariant(),
+                    FontSize = 8.5, FontWeight = FontWeights.SemiBold, Foreground = Brushes.White,
+                    HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center
                 };
             }
         }
@@ -244,8 +250,10 @@ public partial class WidgetWindow : Window
     private static string ShortDuration(double seconds)
     {
         var duration = TimeSpan.FromSeconds(Math.Max(0, seconds));
-        if (duration.TotalHours >= 1) return (int)duration.TotalHours + "时" + duration.Minutes.ToString("00") + "分";
-        if (duration.TotalMinutes >= 1) return (int)duration.TotalMinutes + "分" + duration.Seconds.ToString("00") + "秒";
+        if (duration.TotalHours >= 1)
+            return duration.Minutes == 0 ? (int)duration.TotalHours + "时" : (int)duration.TotalHours + "时" + duration.Minutes.ToString("00") + "分";
+        if (duration.TotalMinutes >= 1)
+            return duration.Seconds == 0 ? (int)duration.TotalMinutes + "分" : (int)duration.TotalMinutes + "分" + duration.Seconds.ToString("00") + "秒";
         return (int)duration.TotalSeconds + "秒";
     }
 
@@ -254,6 +262,7 @@ public partial class WidgetWindow : Window
         _menu.Style = (Style)FindResource("WidgetMenu");
         _menu.Resources.MergedDictionaries.Add(Resources);
         var open = new MenuItem { Header = "打开完整面板" }; open.Click += (_, _) => OpenDashboardRequested?.Invoke();
+        var details = new MenuItem { Header = "查看今日数据明细" }; details.Click += ChartDetails_Click;
         var background = new MenuItem { Header = "隐藏窗口，后台记录" }; background.Click += (_, _) => BackgroundRequested?.Invoke();
         _lockedMenu.Click += (_, _) => Safe(() => _controller.WidgetLocked = !_controller.WidgetLocked);
         _pinnedMenu.Click += (_, _) => Safe(() => _controller.WidgetPinned = !_controller.WidgetPinned);
@@ -261,7 +270,7 @@ public partial class WidgetWindow : Window
         _lightMenu.Click += (_, _) => Safe(() => _controller.DarkMode = false);
         _systemThemeMenu.Click += (_, _) => Safe(() => _controller.FollowSystemTheme = true);
         var hide = new MenuItem { Header = "隐藏组件" }; hide.Click += (_, _) => Safe(HideWidget);
-        _menu.Items.Add(open); _menu.Items.Add(new Separator()); _menu.Items.Add(_lockedMenu); _menu.Items.Add(_pinnedMenu);
+        _menu.Items.Add(open); _menu.Items.Add(details); _menu.Items.Add(new Separator()); _menu.Items.Add(_lockedMenu); _menu.Items.Add(_pinnedMenu);
         _menu.Items.Add(new Separator()); _menu.Items.Add(_systemThemeMenu); _menu.Items.Add(_lightMenu); _menu.Items.Add(_darkMenu);
         _menu.Items.Add(new Separator()); _menu.Items.Add(background); _menu.Items.Add(hide);
         foreach (var item in _menu.Items.OfType<MenuItem>()) item.Style = (Style)FindResource("WidgetMenuItem");
@@ -342,12 +351,35 @@ public partial class WidgetWindow : Window
 
     private List<Rect> GetWorkingAreas()
     {
-        var dpi = VisualTreeHelper.GetDpi(this);
+        var fallbackDpi = VisualTreeHelper.GetDpi(this);
         var primary = Forms.Screen.PrimaryScreen;
         return Forms.Screen.AllScreens.OrderBy(s => s.DeviceName != primary?.DeviceName).Select(s =>
-            new Rect(s.WorkingArea.Left / dpi.DpiScaleX, s.WorkingArea.Top / dpi.DpiScaleY,
-                s.WorkingArea.Width / dpi.DpiScaleX, s.WorkingArea.Height / dpi.DpiScaleY)).ToList();
+        {
+            var scale = GetMonitorScale(s.Bounds.Left + s.Bounds.Width / 2, s.Bounds.Top + s.Bounds.Height / 2, fallbackDpi);
+            return new Rect(s.WorkingArea.Left / scale.X, s.WorkingArea.Top / scale.Y,
+                s.WorkingArea.Width / scale.X, s.WorkingArea.Height / scale.Y);
+        }).ToList();
     }
+
+    private static (double X, double Y) GetMonitorScale(int px, int py, DpiScale fallback)
+    {
+        try
+        {
+            var monitor = MonitorFromPoint(new NativePoint { X = px, Y = py }, 2);
+            if (monitor != IntPtr.Zero && GetDpiForMonitor(monitor, 0, out uint dpiX, out uint dpiY) == 0 && dpiX > 0 && dpiY > 0)
+                return (dpiX / 96d, dpiY / 96d);
+        }
+        catch (DllNotFoundException) { }
+        catch (EntryPointNotFoundException) { }
+        return (fallback.DpiScaleX, fallback.DpiScaleY);
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct NativePoint { public int X, Y; }
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromPoint(NativePoint pt, uint flags);
+    [System.Runtime.InteropServices.DllImport("shcore.dll")]
+    private static extern int GetDpiForMonitor(IntPtr monitor, int dpiType, out uint dpiX, out uint dpiY);
 
     private void ClampPosition()
     {

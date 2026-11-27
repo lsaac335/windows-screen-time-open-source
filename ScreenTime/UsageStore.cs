@@ -41,6 +41,8 @@ public sealed class UsageStore
         public string Date { get; set; } = "";
         public List<UsageSegment>? Segments { get; set; } = new();
         public DaySummary Summary { get; set; } = new();
+        [System.Text.Json.Serialization.JsonIgnore]
+        public bool IsSorted { get; set; }
     }
 
     public UsageStore(string dataDirectory)
@@ -149,7 +151,7 @@ public sealed class UsageStore
             else
             {
                 _knownDays.Add(key);
-                _days[key] = day = new DayFile { Date = key, Version = 2 };
+                _days[key] = day = new DayFile { Date = key, Version = 2, IsSorted = true };
                 _access[key] = ++_accessCounter;
             }
             if (day.Segments == null)
@@ -339,8 +341,14 @@ public sealed class UsageStore
         var result = new DaySummary { Date = day.Date };
         var apps = new Dictionary<string, AppUsage>(StringComparer.OrdinalIgnoreCase);
         var segments = day.Segments ?? new List<UsageSegment>();
+        if (!day.IsSorted && segments.Count > 1)
+        {
+            segments.Sort((a, b) => a.Start.CompareTo(b.Start));
+            day.IsSorted = true;
+        }
+        else if (segments.Count <= 1) day.IsSorted = true;
         DateTimeOffset? lastEnd = null;
-        foreach (var item in segments.OrderBy(s => s.Start))
+        foreach (var item in segments)
         {
             bool known = item.Kind is "app" or UsageRules.IdleAppKind or UsageRules.ScreenOnlyKind or "locked" or "screenoff";
             if (!item.ActivityTracked && item.Kind is "app" or UsageRules.ScreenOnlyKind or UsageRules.IdleAppKind)
@@ -397,34 +405,65 @@ public sealed class UsageStore
             summary.AppHourly[item.AppId] = appHourly = new double[24];
         if (IsAppKind(item.Kind) && !summary.AppForegroundHourly.TryGetValue(item.AppId, out rawHourly))
             summary.AppForegroundHourly[item.AppId] = rawHourly = new double[24];
-        // Minute boundaries handle repeated/skipped local hours and half-hour DST shifts as well.
+        // Fast-path single local hour without DST transition; step by hour when offset is stable,
+        // and fall back to minute boundaries only across repeated/skipped DST hours.
+        var startLocal = TimeZoneInfo.ConvertTime(cursor, _zone);
+        var endLocal = TimeZoneInfo.ConvertTime(item.End, _zone);
+        if (startLocal.Date == endLocal.Date && startLocal.Hour == endLocal.Hour && startLocal.Offset == endLocal.Offset)
+        {
+            AccumulateHour(summary, item, observed, appHourly, rawHourly, startLocal.Hour, item.Seconds);
+            return;
+        }
         while (cursor < item.End)
         {
             var local = TimeZoneInfo.ConvertTime(cursor, _zone);
-            DateTimeOffset next = cursor.AddMinutes(1).AddSeconds(-cursor.Second).AddTicks(-(cursor.Ticks % TimeSpan.TicksPerSecond));
-            if (next <= cursor) next = cursor.AddMinutes(1);
-            if (next > item.End) next = item.End;
+            DateTimeOffset nextHour = cursor.AddHours(1).AddMinutes(-local.Minute).AddSeconds(-local.Second).AddTicks(-(local.Ticks % TimeSpan.TicksPerSecond));
+            if (nextHour <= cursor) nextHour = cursor.AddHours(1);
+            if (nextHour > item.End) nextHour = item.End;
+            DateTimeOffset next;
+            if (TimeZoneInfo.ConvertTime(nextHour, _zone).Offset == local.Offset)
+            {
+                next = nextHour;
+            }
+            else
+            {
+                next = cursor.AddMinutes(1).AddSeconds(-cursor.Second).AddTicks(-(cursor.Ticks % TimeSpan.TicksPerSecond));
+                if (next <= cursor) next = cursor.AddMinutes(1);
+                if (next > item.End) next = item.End;
+            }
             double value = item.Seconds * ((next - cursor).TotalSeconds / span);
-            if (observed) summary.ObservedHourly[local.Hour] += value;
-            else summary.UnknownHourly[local.Hour] += value;
-            if (item.Kind is "app" or UsageRules.IdleAppKind or UsageRules.ScreenOnlyKind or "locked") summary.ScreenHourly[local.Hour] += value;
-            if (IsAppKind(item.Kind))
-            {
-                summary.RawForegroundHourly[local.Hour] += value;
-                rawHourly![local.Hour] += value;
-            }
-            if (item.Kind == "app")
-            {
-                summary.ForegroundHourly[local.Hour] += value;
-                appHourly![local.Hour] += value;
-            }
+            AccumulateHour(summary, item, observed, appHourly, rawHourly, local.Hour, value);
             cursor = next;
+        }
+    }
+
+    private static void AccumulateHour(DaySummary summary, UsageSegment item, bool observed,
+        double[]? appHourly, double[]? rawHourly, int hour, double value)
+    {
+        if (observed) summary.ObservedHourly[hour] += value;
+        else summary.UnknownHourly[hour] += value;
+        if (item.Kind is "app" or UsageRules.IdleAppKind or UsageRules.ScreenOnlyKind or "locked") summary.ScreenHourly[hour] += value;
+        if (IsAppKind(item.Kind))
+        {
+            summary.RawForegroundHourly[hour] += value;
+            rawHourly![hour] += value;
+        }
+        if (item.Kind == "app")
+        {
+            summary.ForegroundHourly[hour] += value;
+            appHourly![hour] += value;
         }
     }
 
     private static void AppendUncovered(DayFile day, UsageSegment part)
     {
         var segments = day.Segments!;
+        // O(1) fast-path for chronological tail appends (99%+ of live sampling ticks).
+        if (day.IsSorted && (segments.Count == 0 || segments[^1].End <= part.Start))
+        {
+            AppendOrMerge(segments, part);
+            return;
+        }
         var uncovered = new List<(DateTimeOffset Start, DateTimeOffset End)> { (part.Start, part.End) };
         // An event callback and a timer can report an interval twice. Existing ownership wins;
         // a second app or another display must never double-count the same wall-clock instant.
@@ -451,17 +490,23 @@ public sealed class UsageStore
                 Seconds = part.Seconds * ((range.End - range.Start).TotalSeconds / (part.End - part.Start).TotalSeconds),
                 Kind = part.Kind, AppId = part.AppId, AppName = part.AppName, ActivityTracked = part.ActivityTracked, ActivityBasis = part.ActivityBasis
             };
-            // Merge only contiguous, equal-rate intervals. Preserve gaps and proportional durations.
-            var last = segments.LastOrDefault();
-            if (last != null && last.End == piece.Start && last.Kind == piece.Kind &&
-                last.AppId == piece.AppId && last.AppName == piece.AppName && last.ActivityTracked == piece.ActivityTracked && last.ActivityBasis == piece.ActivityBasis &&
-                Math.Abs(last.Seconds / (last.End - last.Start).TotalSeconds - piece.Seconds / (piece.End - piece.Start).TotalSeconds) < 0.000001)
-            {
-                last.End = piece.End;
-                last.Seconds += piece.Seconds;
-            }
-            else segments.Add(piece);
+            if (segments.Count > 0 && piece.Start < segments[^1].End) day.IsSorted = false;
+            AppendOrMerge(segments, piece);
         }
+    }
+
+    private static void AppendOrMerge(List<UsageSegment> segments, UsageSegment piece)
+    {
+        // Merge only contiguous, equal-rate intervals. Preserve gaps and proportional durations.
+        var last = segments.Count > 0 ? segments[^1] : null;
+        if (last != null && last.End == piece.Start && last.Kind == piece.Kind &&
+            last.AppId == piece.AppId && last.AppName == piece.AppName && last.ActivityTracked == piece.ActivityTracked && last.ActivityBasis == piece.ActivityBasis &&
+            Math.Abs(last.Seconds / (last.End - last.Start).TotalSeconds - piece.Seconds / (piece.End - piece.Start).TotalSeconds) < 0.000001)
+        {
+            last.End = piece.End;
+            last.Seconds += piece.Seconds;
+        }
+        else segments.Add(piece);
     }
 
     private static bool IsSelf(string? appId) => string.Equals(appId, UsageRules.SelfAppId, StringComparison.OrdinalIgnoreCase);

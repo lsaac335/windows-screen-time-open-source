@@ -11,8 +11,15 @@ internal static class AutoStartManager
     {
         get
         {
-            using var key = Registry.CurrentUser.OpenSubKey(KeyPath, false);
-            return string.Equals(key?.GetValue(Entry) as string, Command, StringComparison.OrdinalIgnoreCase);
+            try
+            {
+                using var key = Registry.CurrentUser.OpenSubKey(KeyPath, false);
+                return string.Equals(key?.GetValue(Entry) as string, Command, StringComparison.OrdinalIgnoreCase);
+            }
+            catch (Exception ex) when (ex is System.Security.SecurityException or UnauthorizedAccessException or System.IO.IOException)
+            {
+                return false;
+            }
         }
     }
     private static string Command => "\"" + Environment.ProcessPath + "\" --tray";

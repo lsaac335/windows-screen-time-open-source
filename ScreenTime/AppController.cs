@@ -23,6 +23,8 @@ public sealed class AppController : IAppController, IDisposable
     private bool _disposed;
     private bool _exiting;
     private readonly Dictionary<string, System.Windows.Media.ImageSource?> _icons = new();
+    private readonly Dictionary<string, long> _missingIcons = new(StringComparer.Ordinal);
+    private string? _lastStatusSignature;
     public event Action? Updated;
     public event Action? ExitRequested;
     public bool IsRecordingEnabled => _settings.RecordingEnabled;
@@ -232,6 +234,10 @@ public sealed class AppController : IAppController, IDisposable
     }
     public double? WidgetLeft => _settings.WidgetLeft;
     public double? WidgetTop => _settings.WidgetTop;
+    public double? WindowWidth => _settings.WindowWidth;
+    public double? WindowHeight => _settings.WindowHeight;
+    public double? WindowLeft => _settings.WindowLeft;
+    public double? WindowTop => _settings.WindowTop;
     public void SaveWidgetPosition(double left, double top)
     {
         if (!double.IsFinite(left) || !double.IsFinite(top)) throw new ArgumentException("组件位置无效。");
@@ -240,6 +246,17 @@ public sealed class AppController : IAppController, IDisposable
         double? oldLeft = _settings.WidgetLeft, oldTop = _settings.WidgetTop;
         SaveWidgetPreference(() => { _settings.WidgetLeft = left; _settings.WidgetTop = top; },
             () => { _settings.WidgetLeft = oldLeft; _settings.WidgetTop = oldTop; });
+    }
+    public void SaveWindowBounds(double width, double height, double left, double top)
+    {
+        if (!double.IsFinite(width) || !double.IsFinite(height) || !double.IsFinite(left) || !double.IsFinite(top) || width < 400 || height < 300) return;
+        if (_settings.WindowWidth.HasValue && _settings.WindowHeight.HasValue && _settings.WindowLeft.HasValue && _settings.WindowTop.HasValue &&
+            Math.Abs(_settings.WindowWidth.Value - width) < 1 && Math.Abs(_settings.WindowHeight.Value - height) < 1 &&
+            Math.Abs(_settings.WindowLeft.Value - left) < 1 && Math.Abs(_settings.WindowTop.Value - top) < 1) return;
+        double? ow = _settings.WindowWidth, oh = _settings.WindowHeight, ol = _settings.WindowLeft, ot = _settings.WindowTop;
+        _settings.WindowWidth = width; _settings.WindowHeight = height; _settings.WindowLeft = left; _settings.WindowTop = top;
+        try { _settings.Save(_settingsPath); }
+        catch { _settings.WindowWidth = ow; _settings.WindowHeight = oh; _settings.WindowLeft = ol; _settings.WindowTop = ot; }
     }
     private void SaveWidgetPreference(Action update, Action rollback)
     {
@@ -315,12 +332,17 @@ public sealed class AppController : IAppController, IDisposable
         {
             DrainTracking();
             _ticks++;
-            if (_ticks % 10 == 0)
+            if (_ticks % 30 == 0)
             {
                 _tracker?.Flush();
                 DrainTracking();
                 _store.Save();
                 if (_ticks % 3600 == 0) _store.Prune();
+            }
+            string signature = $"{StatusText}|{CurrentAppName}|{DisplayStateText}|{IsPaused}|{HasError}|{DarkMode}";
+            if (signature != _lastStatusSignature || _ticks % 60 == 0)
+            {
+                _lastStatusSignature = signature;
                 WriteRuntimeStatus();
             }
         }
@@ -334,7 +356,7 @@ public sealed class AppController : IAppController, IDisposable
         var widget = System.Windows.Application.Current?.Windows.OfType<WidgetWindow>().FirstOrDefault();
         var snapshot = new
         {
-            Version = "0.5.2", ProcessId = Environment.ProcessId,
+            Version = AppSettings.CurrentVersion, ProcessId = Environment.ProcessId,
             DashboardWindows = System.Windows.Application.Current?.Windows.OfType<MainWindow>().Count(),
             FullGcCollections = GC.CollectionCount(GC.MaxGeneration),
             Runtime = Environment.Version.ToString(), UpdatedAt = DateTimeOffset.Now,
@@ -378,6 +400,8 @@ public sealed class AppController : IAppController, IDisposable
     public System.Windows.Media.ImageSource? GetAppIcon(string appId)
     {
         if (_icons.TryGetValue(appId, out var cached)) return cached;
+        long nowTick = Environment.TickCount64;
+        if (_missingIcons.TryGetValue(appId, out long missedAt) && nowTick - missedAt < 60_000) return null;
         var directory = Path.Combine(DataDirectory, "icons");
         var key = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(appId))).Substring(0, 24);
         var file = Path.Combine(directory, key + ".png");
@@ -420,12 +444,18 @@ public sealed class AppController : IAppController, IDisposable
             }
         }
         catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is ArgumentException || ex is System.ComponentModel.Win32Exception || ex is NotSupportedException) { }
-        // A null before the first native path resolution is retried on the next refresh.
+        // Briefly cache misses (60s) to avoid repeated disk/hash lookups every 5s tick.
         if (source != null)
         {
+            _missingIcons.Remove(appId);
             // Views retain the icons they currently display; cap only the shared lookup cache.
             if (_icons.Count >= 64) _icons.Remove(_icons.Keys.First());
             _icons[appId] = source;
+        }
+        else
+        {
+            if (_missingIcons.Count >= 128) _missingIcons.Clear();
+            _missingIcons[appId] = nowTick;
         }
         return source;
     }
@@ -433,10 +463,12 @@ public sealed class AppController : IAppController, IDisposable
     {
         _store.TrimCache(1);
         _icons.Clear();
+        _missingIcons.Clear();
     }
     private void ClearIconCache()
     {
         _icons.Clear();
+        _missingIcons.Clear();
         var directory = Path.Combine(DataDirectory, "icons");
         if (Directory.Exists(directory)) foreach (var file in Directory.EnumerateFiles(directory, "*.png")) File.Delete(file);
     }

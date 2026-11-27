@@ -33,6 +33,11 @@ public interface IAppController
     double? WidgetLeft { get; }
     double? WidgetTop { get; }
     void SaveWidgetPosition(double left, double top);
+    double? WindowWidth { get; }
+    double? WindowHeight { get; }
+    double? WindowLeft { get; }
+    double? WindowTop { get; }
+    void SaveWindowBounds(double width, double height, double left, double top);
     event Action? Updated;
     void StartRecording();
     void TogglePause();

@@ -93,10 +93,10 @@ internal sealed class TrayMenu : ContextMenuStrip
 
     private sealed record Palette(Color Surface, Color Border, Color Text, Color Hover, Color Pressed, Color Divider, Color Check)
     {
-        public static readonly Palette Light = new(Rgb(0xFBFAFD), Rgb(0xD9D5DF), Rgb(0x262331),
-            Rgb(0xEEEBF4), Rgb(0xE5DFEF), Rgb(0xE4DFE9), Rgb(0x6241A7));
-        public static readonly Palette Dark = new(Rgb(0x24222B), Rgb(0x484450), Rgb(0xF5F2FA),
-            Rgb(0x363240), Rgb(0x413B4D), Rgb(0x423E4B), Rgb(0xD3BAFF));
+        public static readonly Palette Light = new(Rgb(0xFFFFFF), Rgb(0xDCE1EA), Rgb(0x0F172A),
+            Rgb(0xF1F3F9), Rgb(0xE6EAF5), Rgb(0xE8ECF3), Rgb(0x4F5CE0));
+        public static readonly Palette Dark = new(Rgb(0x12151F), Rgb(0x2A3144), Rgb(0xF3F5F9),
+            Rgb(0x1E2436), Rgb(0x272F46), Rgb(0x242A3B), Rgb(0x7C8AFF));
 
         private static Color Rgb(int value) => Color.FromArgb(unchecked((int)0xFF000000) | value);
     }

@@ -128,12 +128,7 @@ public sealed class TrackingService : IDisposable
     public void SetIdleTimeoutMinutes(int minutes) => Invoke(t => t.SetIdleTimeoutMinutes(minutes));
     public void SetAppIdleTimeoutMinutes(string appId, int? minutes) => Invoke(t => t.SetAppIdleTimeoutMinutes(appId, minutes));
     public void Flush() => Invoke(t => t.Flush());
-    public string? GetApplicationPath(string appId)
-    {
-        string? path = null;
-        Invoke(t => path = t.GetApplicationPath(appId));
-        return path;
-    }
+    public string? GetApplicationPath(string appId) => _disposed ? null : _tracker?.GetApplicationPath(appId);
 
     // Only the UI thread consumes this queue. Persistence failures leave the head available for retry.
     public void DrainSegments(Action<UsageSegment> consume)

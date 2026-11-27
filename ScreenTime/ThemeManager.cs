@@ -35,121 +35,66 @@ public static class ThemeManager
                 brush.GradientStops.Add(new GradientStop(Parse(colors[index]), (double)index / (colors.Length - 1)));
             return brush;
         }
-        RadialGradientBrush Glow(Point center, double radiusX, double radiusY, string night, string day)
-        {
-            var tint = Parse(dark ? night : day);
-            var fade = Color.FromArgb(0, tint.R, tint.G, tint.B);
-            return new RadialGradientBrush(tint, fade)
-            {
-                Center = center, GradientOrigin = center, RadiusX = radiusX, RadiusY = radiusY
-            };
-        }
-        void Surface(string key, Action<DrawingContext, Rect> draw)
-        {
-            var unit = new Rect(0, 0, 1, 1);
-            var layers = new DrawingGroup { ClipGeometry = new RectangleGeometry(unit) };
-            using (var drawing = layers.Open()) draw(drawing, unit);
-            Add(key, new DrawingBrush(layers)
-            {
-                ViewboxUnits = BrushMappingMode.Absolute, Viewbox = unit, Stretch = Stretch.Fill
-            });
-        }
-        Solid("WindowBackground", "#262339", "#E9E2F6");
-        Solid("CardBackground", "#282439", "#FCFAFF");
-        Solid("CardAltBackground", "#29283E", "#F5F3FA");
-        Solid("Ink", "#F5F0FF", "#26243E");
-        Solid("Muted", "#C9BEDC", "#59536D");
-        Solid("Secondary", "#C7BADB", "#645D76");
-        Solid("Line", "#544764", "#E4DDEF");
-        Solid("Accent", "#D3BAFF", "#6241A7");
-        Solid("AccentFill", "#7954BB", "#744DBA");
-        Solid("AccentSoft", "#47365D", "#EFE7FC");
-        Solid("AccentText", "#E4D7FC", "#53368F");
-        Solid("FocusStroke", "#F4DFFF", "#593699");
-        Solid("ToggleTrack", "#786993", "#837396");
+        Solid("WindowBackground", "#0B0D14", "#F2F4F8");
+        Solid("CardBackground", "#131722", "#FFFFFF");
+        Solid("CardAltBackground", "#191E2D", "#F5F7FC");
+        Solid("Ink", "#F3F5F9", "#111827");
+        Solid("Muted", "#8E97AA", "#64748B");
+        Solid("Secondary", "#667085", "#94A3B8");
+        Solid("Line", "#202636", "#E6EAF2");
+        Solid("Accent", "#7C8AFF", "#4F5CE0");
+        Solid("AccentFill", "#5B6AF0", "#4F5CE0");
+        Solid("AccentSoft", "#1D2340", "#EEF0FE");
+        Solid("AccentText", "#B8C2FF", "#3F4CC7");
+        Solid("FocusStroke", "#8F9BFF", "#4F5CE0");
+        Solid("ToggleTrack", "#2F374C", "#CBD5E1");
         Solid("OnAccent", "#FFFFFF", "#FFFFFF");
-        Solid("SidebarMuted", "#D7CDE8", "#554D69");
-        Solid("GlassDepth", "#54101024", "#21664D90");
-        Solid("StatusGood", "#80DCAD", "#227553");
-        Solid("StatusGoodBackground", "#253E38", "#E7F5ED");
-        Solid("StatusWarning", "#F0B987", "#945130");
-        Solid("StatusWarningBackground", "#48342E", "#FFF0E7");
-        Solid("StatusIdleBackground", "#393348", "#F2EDF8");
-        Solid("ChartGrid", "#453D58", "#EAE4F4");
-        Solid("ChartAxis", "#B8ADC9", "#6A627D");
-        Solid("ChartScreen", "#5B4B79", "#D9CBF5");
-        Solid("ChartScreenStroke", "#C1B6D8", "#705B8C");
-        Solid("ChartForeground", "#B597FF", "#7655CC");
-        Solid("ChartMissing", "#343047", "#F2EDF8");
-        Solid("ChartHatch", "#5B526F", "#D1C4E2");
-        Solid("ChartFuture", "#332D46", "#F1EDF8");
-        Solid("InputBackground", "#302A42", "#FDFBFF");
-        Solid("Danger", "#F6A7AC", "#9F404C");
-        Solid("CaptionHover", "#16FFFFFF", "#10000000");
-        Solid("CaptionPressed", "#24FFFFFF", "#1A000000");
-        Add("GlassEdge", Linear(new[] { "#D6DCC6FF", "#597C6AA0", "#A0ADDCF1" },
-                                new[] { "#FFFFFFFF", "#ADE6D9F6", "#F2FFFFFF" }));
-        Add("GlassInset", Linear(new[] { "#44EDDBFF", "#00DFD2FA", "#379FE1E8" },
-                                 new[] { "#A2FFFFFF", "#00FFFFFF", "#82F8FFFF" }));
-        Add("GlassControl", Linear(new[] { "#B45E4D76", "#CD362D4B", "#B644425E" },
-                                   new[] { "#EFFFFFFF", "#BAF2E8FC", "#D4F9FCFF" }, vertical: true));
-        Add("SidebarActive", Linear(new[] { "#CF594675", "#D741385A", "#AD574C78" },
-                                    new[] { "#F8FFFFFF", "#DBEEE2FB", "#EAF9F4FF" }, vertical: true));
-        Add("GlassSelection", Linear(new[] { "#FF58436E", "#FF473557" },
-                                     new[] { "#FFF9F2FF", "#FFEBDEF9" }, vertical: true));
-        Surface("GlassBackdrop", (drawing, unit) =>
-        {
-            drawing.DrawRectangle(Linear(new[] { "#3F2E56", "#28233E", "#1E2A41", "#203847" },
-                                         new[] { "#DFCBF4", "#EFE6FA", "#E9EFFC", "#CDEDE8" }), null, unit);
-            drawing.DrawRectangle(Glow(new Point(.02, .23), .56, .70, "#858152AF", "#8ACFA7F5"), null, unit);
-            drawing.DrawRectangle(Glow(new Point(.91, .04), .65, .65, "#445C6BC2", "#80BFCCFF"), null, unit);
-            drawing.DrawRectangle(Glow(new Point(1, .96), .77, .61, "#673B9CA5", "#92ABDDD5"), null, unit);
-            var reflection = Glow(new Point(.53, .51), .65, .18, "#327C9AD8", "#5EFFFFFF");
-            reflection.RelativeTransform = new RotateTransform(-27, .53, .51);
-            drawing.DrawRectangle(reflection, null, unit);
-            var sweep = Geometry.Parse("M -0.1,0.38 C 0.12,0.64 0.35,0.64 0.57,0.38 C 0.75,0.16 0.85,0.11 1.1,0.27 L 1.1,0.62 C 0.80,0.39 0.71,0.62 0.49,0.78 C 0.23,0.98 0.06,0.92 -0.1,0.77 Z");
-            drawing.DrawGeometry(Linear(new[] { "#168BCDE8", "#25A589EF", "#156FC7D2" },
-                                        new[] { "#22FFFAFF", "#50F7F0FF", "#37B7E3EB" }), null, sweep);
-        });
-        Surface("MainWindowEdgeDepth", (drawing, unit) =>
-        {
-            void FadeInward(Point start, Point end, string night, string day)
-            {
-                var tint = Parse(dark ? night : day);
-                var fade = new LinearGradientBrush(tint, Color.FromArgb(0, tint.R, tint.G, tint.B), start, end);
-                fade.GradientStops.Insert(1, new GradientStop(Color.FromArgb((byte)(tint.A * .42), tint.R, tint.G, tint.B), .35));
-                drawing.DrawRectangle(fade, null, unit);
-            }
-
-            drawing.DrawRectangle(Glow(new Point(.04, .012), .34, .22, "#31D6CCFF", "#37FFFBFF"), null, unit);
-            drawing.DrawRectangle(Glow(new Point(.98, .98), .29, .19, "#3A9EF5EA", "#32F4FFFF"), null, unit);
-            FadeInward(new Point(0, 0), new Point(.054, 0), "#440C0A1F", "#167E61A4");
-            FadeInward(new Point(1, 0), new Point(.947, 0), "#530A1727", "#20607C9E");
-            FadeInward(new Point(0, 1), new Point(0, .875), "#68070C1B", "#25735D96");
-            FadeInward(new Point(0, 0), new Point(0, .056), "#629F8BCC", "#49FFFAFF");
-        });
-        Surface("SidebarBackground", (drawing, unit) =>
-        {
-            drawing.DrawRectangle(Linear(new[] { "#C747375F", "#9E342841", "#B1363953" },
-                                         new[] { "#94FFFFFF", "#7BF9F1FF", "#C2F8FCFF" }), null, unit);
-            drawing.DrawRectangle(Glow(new Point(.14, .0), 1.25, .48, "#41E0BAFF", "#CBFFFFFF"), null, unit);
-            drawing.DrawRectangle(Glow(new Point(1.0, .99), 1.10, .37, "#2195E9EE", "#63E2F9FA"), null, unit);
-        });
-        Surface("GlassHero", (drawing, unit) =>
-        {
-            drawing.DrawRectangle(Linear(new[] { "#EA443453", "#E2332948", "#CA2C324E" },
-                                         new[] { "#EFFFFFFF", "#D4F7EEFF", "#A8EAF2FC" }), null, unit);
-            drawing.DrawRectangle(Glow(new Point(.10, 0), .77, .95, "#31E8BDFF", "#CEFFFFFF"), null, unit);
-            drawing.DrawRectangle(Glow(new Point(.90, .03), .60, 1.18, "#2A879DEC", "#5BCDD8F9"), null, unit);
-        });
-        Surface("GlassWidget", (drawing, unit) =>
-        {
-            // Keep the base tint sufficiently dense against a light or dark wallpaper.
-            drawing.DrawRectangle(Linear(new[] { "#F647365E", "#F3322948", "#F1283D50" },
-                                         new[] { "#FAF7E9FF", "#F9F2E8FC", "#F8E7F8F8" }), null, unit);
-            drawing.DrawRectangle(Glow(new Point(.00, .03), .98, .66, "#39E5BEFF", "#DAFFFFFF"), null, unit);
-            drawing.DrawRectangle(Glow(new Point(.98, 1), .93, .62, "#3495DAE0", "#66C0F0E8"), null, unit);
-        });
+        Solid("SidebarMuted", "#8E97AA", "#475569");
+        Solid("GlassDepth", "#6004060C", "#120F172A");
+        Solid("StatusGood", "#34D399", "#059669");
+        Solid("StatusGoodBackground", "#112923", "#E6F7F0");
+        Solid("StatusWarning", "#FBBF24", "#B45309");
+        Solid("StatusWarningBackground", "#2B2212", "#FEF3DC");
+        Solid("StatusIdleBackground", "#1B2030", "#EEF1F6");
+        Solid("ChartGrid", "#1B2130", "#EEF1F6");
+        Solid("ChartAxis", "#757F94", "#8A94A6");
+        Solid("ChartScreen", "#252E4A", "#DCE1F8");
+        Solid("ChartScreenStroke", "#16FFFFFF", "#124F5CE0");
+        Solid("ChartForeground", "#7C8AFF", "#4F5CE0");
+        Solid("ChartMissing", "#06FFFFFF", "#050F172A");
+        Solid("ChartHatch", "#10FFFFFF", "#100F172A");
+        Solid("ChartFuture", "#05FFFFFF", "#040F172A");
+        Solid("InputBackground", "#0F121B", "#FFFFFF");
+        Solid("Danger", "#F87171", "#DC2626");
+        Solid("CaptionHover", "#14FFFFFF", "#0C0F172A");
+        Solid("CaptionPressed", "#20FFFFFF", "#140F172A");
+        Solid("HoverOverlay", "#10FFFFFF", "#080F172A");
+        Solid("PressedOverlay", "#1E000000", "#100F172A");
+        Solid("RowHover", "#10FFFFFF", "#80EEF0FE");
+        Solid("ProgressTrack", "#16FFFFFF", "#E8ECF4");
+        Solid("ChartScreenFill", "#367C8AFF", "#2B4F5CE0");
+        Solid("ChartHoverBand", "#147C8AFF", "#124F5CE0");
+        Solid("RingTrack", "#232A3E", "#E6EAF3");
+        Add("ChartForegroundBrush", Linear(new[] { "#7C8AFF", "#46C6E8" },
+                                           new[] { "#4F5CE0", "#0EA5E9" }, vertical: true));
+        Add("ProgressBarBrush", Linear(new[] { "#7C8AFF", "#46C6E8" },
+                                       new[] { "#4F5CE0", "#0EA5E9" }, vertical: false));
+        Add("RingAccent", Linear(new[] { "#7C8AFF", "#5A9BF6", "#46C6E8" },
+                                 new[] { "#4F5CE0", "#2B85E8", "#0EA5E9" }));
+        Solid("GlassCardEdge", "#202636", "#E6EAF2");
+        Solid("GlassEdge", "#2A3248", "#E0E5F0");
+        Solid("GlassInset", "#12FFFFFF", "#66FFFFFF");
+        Solid("GlassControl", "#171C2B", "#FFFFFF");
+        Solid("SidebarActive", "#1D2340", "#EEF0FE");
+        Solid("GlassSelection", "#212848", "#EEF0FE");
+        Solid("GlassCard", "#131722", "#FFFFFF");
+        Add("GlassBackdrop", Linear(new[] { "#0B0D14", "#0E111B" },
+                                    new[] { "#F3F5F8", "#EDF0F5" }, vertical: true));
+        Solid("MainWindowEdgeDepth", "#00000000", "#00000000");
+        Solid("SidebarBackground", "#111520", "#FFFFFF");
+        Add("GlassHero", Linear(new[] { "#181E30", "#131724" },
+                                new[] { "#FFFFFF", "#F5F7FF" }));
+        Solid("GlassWidget", "#111520", "#FFFFFF");
         return result;
     }
 

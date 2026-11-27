@@ -1,4 +1,4 @@
-# ScreenTime 0.5.2 — User guide
+# ScreenTime 0.5.3 — User guide
 
 [English overview](../README.en.md) · [中文使用说明](../使用说明.md)
 

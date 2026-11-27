@@ -8,6 +8,7 @@ internal static class DurationTypography
 {
     public static void Set(TextBlock text, string duration)
     {
+        Typography.SetNumeralAlignment(text, FontNumeralAlignment.Tabular);
         if (text.Text == duration) return;
 
         text.Text = duration;

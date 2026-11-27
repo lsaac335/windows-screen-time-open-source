@@ -9,7 +9,14 @@ namespace ScreenTime;
 
 public sealed class ActivityRing : FrameworkElement
 {
+    private static readonly Typeface ValueFace = new(new FontFamily("Segoe UI Variable Display, Segoe UI"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
+    private static readonly CultureInfo ZhCn = CultureInfo.GetCultureInfo("zh-CN");
+
     private double? _ratio;
+    private bool _cachedDark;
+    private double _cachedThickness;
+    private Pen? _trackPen;
+    private Pen? _accentPen;
 
     protected override AutomationPeer OnCreateAutomationPeer() => new ActivityRingPeer(this);
 
@@ -30,26 +37,41 @@ public sealed class ActivityRing : FrameworkElement
         InvalidateVisual();
     }
 
+    private void EnsurePens(double thickness)
+    {
+        bool dark = ThemeManager.IsDark;
+        if (_trackPen != null && _accentPen != null && _cachedDark == dark && Math.Abs(_cachedThickness - thickness) < 0.05)
+            return;
+        _cachedDark = dark;
+        _cachedThickness = thickness;
+        _trackPen = new Pen(ThemeManager.GetBrush("RingTrack"), thickness);
+        _trackPen.Freeze();
+        _accentPen = new Pen(ThemeManager.GetBrush("RingAccent"), thickness)
+        {
+            StartLineCap = PenLineCap.Round,
+            EndLineCap = PenLineCap.Round
+        };
+        _accentPen.Freeze();
+    }
+
     protected override void OnRender(DrawingContext drawing)
     {
         base.OnRender(drawing);
+        double side = Math.Min(RenderSize.Width, RenderSize.Height);
+        if (side <= 16) return;
         var center = new Point(RenderSize.Width / 2, RenderSize.Height / 2);
-        double thickness = 8;
-        double radius = Math.Min(center.X, center.Y) - thickness;
-        if (radius <= 0) return;
+        double thickness = Math.Clamp(side * 0.092, 5.5, 8.5);
+        double radius = side / 2 - thickness / 2 - 2;
+        if (radius <= 4) return;
 
-        drawing.DrawEllipse(ThemeManager.GetBrush("CardAltBackground"),
-            new Pen(ThemeManager.GetBrush("ChartScreen"), thickness), center, radius, radius);
+        EnsurePens(thickness);
+        drawing.DrawEllipse(null, _trackPen, center, radius, radius);
+
         if (_ratio is double ratio && ratio > 0)
         {
-            var pen = new Pen(ThemeManager.GetBrush("ChartForeground"), thickness)
+            if (ratio >= 0.999)
             {
-                StartLineCap = PenLineCap.Round,
-                EndLineCap = PenLineCap.Round
-            };
-            if (ratio >= 1)
-            {
-                drawing.DrawEllipse(null, pen, center, radius, radius);
+                drawing.DrawEllipse(null, _accentPen, center, radius, radius);
             }
             else
             {
@@ -62,22 +84,17 @@ public sealed class ActivityRing : FrameworkElement
                     context.BeginFigure(start, false, false);
                     context.ArcTo(end, new Size(radius, radius), 0, ratio > .5, SweepDirection.Clockwise, true, false);
                 }
-                drawing.DrawGeometry(null, pen, arc);
+                arc.Freeze();
+                drawing.DrawGeometry(null, _accentPen, arc);
             }
         }
 
-        bool compact = radius < 40;
-        DrawLabel(drawing, ValueLabel, center.X, center.Y - (compact ? 16 : 24), compact ? 17 : 29, "AccentText", "Segoe UI", FontWeights.SemiBold);
-        DrawLabel(drawing, "占亮屏时长", center.X, center.Y + (compact ? 4 : 10), compact ? 9 : 11, "Muted", "Microsoft YaHei UI", FontWeights.Normal);
+        double dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
+        double fontSize = Math.Clamp(side * 0.24, 14, 24);
+        var valueText = new FormattedText(ValueLabel, ZhCn, FlowDirection.LeftToRight, ValueFace,
+            fontSize, ThemeManager.GetBrush("AccentText"), dpi);
+        drawing.DrawText(valueText, new Point(center.X - valueText.Width / 2, center.Y - valueText.Height / 2));
     }
 
-    private void DrawLabel(DrawingContext drawing, string value, double x, double y, double size, string brush, string font, FontWeight weight)
-    {
-        var label = new FormattedText(value, CultureInfo.GetCultureInfo("zh-CN"), FlowDirection.LeftToRight,
-            new Typeface(new FontFamily(font), FontStyles.Normal, weight, FontStretches.Normal),
-            size, ThemeManager.GetBrush(brush), VisualTreeHelper.GetDpi(this).PixelsPerDip);
-        drawing.DrawText(label, new Point(x - label.Width / 2, y));
-    }
-
-    private string ValueLabel => _ratio.HasValue ? _ratio.Value.ToString("P0", CultureInfo.GetCultureInfo("zh-CN")) : "—";
+    private string ValueLabel => _ratio.HasValue ? _ratio.Value.ToString("P0", ZhCn) : "—";
 }

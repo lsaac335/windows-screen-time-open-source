@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -23,7 +24,7 @@ public sealed class NativeTracker : IDisposable
     private readonly int _sessionId;
     private readonly NativeMethods.WinEventDelegate _foregroundCallback;
     private readonly Dictionary<string, AppIdentity> _identities = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, string> _applicationPaths = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, string> _applicationPaths = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> _idleOverrides = new(StringComparer.OrdinalIgnoreCase);
     private readonly ForegroundEventClock _eventClock = new(Stopwatch.Frequency);
     private readonly Queue<(IntPtr Window, uint Time)> _foregroundEvents = new();
@@ -640,9 +641,9 @@ public sealed class NativeTracker : IDisposable
             }, IntPtr.Zero);
         }
 
-        string? path = TryProcessPath(processId);
+        (string? path, string? aumid) = TryProcessMetadata(processId);
         _foregroundPath = path;
-        _foregroundAumid = TryProcessAumid(processId);
+        _foregroundAumid = aumid;
         string processName;
         try
         {
@@ -705,10 +706,30 @@ public sealed class NativeTracker : IDisposable
         "chrome" => "Google Chrome",
         "firefox" => "Firefox",
         "brave" => "Brave",
+        "arc" => "Arc",
         "wechat" or "weixin" => "微信",
         "qq" => "QQ",
+        "dingtalk" => "钉钉",
+        "feishu" or "lark" => "飞书",
+        "telegram" => "Telegram",
+        "discord" => "Discord",
         "code" => "Visual Studio Code",
+        "devenv" => "Visual Studio",
+        "idea64" => "IntelliJ IDEA",
+        "pycharm64" => "PyCharm",
+        "rider64" => "Rider",
+        "webstorm64" => "WebStorm",
+        "datagrip64" => "DataGrip",
+        "cursor" => "Cursor",
         "notepad" => "记事本",
+        "obsidian" => "Obsidian",
+        "notion" => "Notion",
+        "wps" => "WPS Office",
+        "winword" => "Microsoft Word",
+        "excel" => "Microsoft Excel",
+        "powerpnt" => "Microsoft PowerPoint",
+        "figma" => "Figma",
+        "photoshop" => "Adobe Photoshop",
         "windowsterminal" => "Windows 终端",
         "powershell" or "pwsh" => "PowerShell",
         "cmd" => "命令提示符",
@@ -716,37 +737,43 @@ public sealed class NativeTracker : IDisposable
         "taskmgr" => "任务管理器",
         "codex" => "Codex",
         "systemsettings" => "Windows 设置",
+        "steam" or "steamwebhelper" => "Steam",
+        "bilibili" => "哔哩哔哩",
+        "cloudmusic" => "网易云音乐",
+        "qqmusic" => "QQ 音乐",
+        "spotify" => "Spotify",
+        "potplayermini64" or "potplayermini" => "PotPlayer",
+        "vlc" => "VLC",
         _ => processName
     };
 
-    private static string? TryProcessPath(uint processId)
+    private static (string? Path, string? Aumid) TryProcessMetadata(uint processId)
     {
         IntPtr process = NativeMethods.OpenProcess(0x1000, false, processId);
-        if (process == IntPtr.Zero) return null;
+        if (process == IntPtr.Zero) return (null, null);
         try
         {
+            string? path = null;
             for (int size = 1024; size <= 32768; size *= 2)
             {
                 int capacity = size;
-                StringBuilder path = new(capacity);
-                if (NativeMethods.QueryFullProcessImageName(process, 0, path, ref capacity)) return path.ToString();
-                if (Marshal.GetLastWin32Error() != 122) return null;
+                StringBuilder buffer = new(capacity);
+                if (NativeMethods.QueryFullProcessImageName(process, 0, buffer, ref capacity))
+                {
+                    path = buffer.ToString();
+                    break;
+                }
+                if (Marshal.GetLastWin32Error() != 122) break;
             }
-            return null;
-        }
-        finally { NativeMethods.CloseHandle(process); }
-    }
-
-    private static string? TryProcessAumid(uint processId)
-    {
-        IntPtr process = NativeMethods.OpenProcess(0x1000, false, processId);
-        if (process == IntPtr.Zero) return null;
-        try
-        {
+            string? aumid = null;
             uint count = 0;
-            if (NativeMethods.GetApplicationUserModelId(process, ref count, null) != 122 || count is 0 or > 1024) return null;
-            var value = new StringBuilder((int)count);
-            return NativeMethods.GetApplicationUserModelId(process, ref count, value) == 0 ? value.ToString() : null;
+            if (NativeMethods.GetApplicationUserModelId(process, ref count, null) == 122 && count is > 0 and <= 1024)
+            {
+                var value = new StringBuilder((int)count);
+                if (NativeMethods.GetApplicationUserModelId(process, ref count, value) == 0)
+                    aumid = value.ToString();
+            }
+            return (path, aumid);
         }
         finally { NativeMethods.CloseHandle(process); }
     }

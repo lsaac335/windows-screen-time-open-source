@@ -25,7 +25,20 @@ public sealed class AppSettings
     public bool WidgetLocked { get; set; }
     public double? WidgetLeft { get; set; }
     public double? WidgetTop { get; set; }
-    public string CreatedVersion { get; set; } = "0.5.2";
+    public double? WindowWidth { get; set; }
+    public double? WindowHeight { get; set; }
+    public double? WindowLeft { get; set; }
+    public double? WindowTop { get; set; }
+    public string CreatedVersion { get; set; } = CurrentVersion;
+
+    public static string CurrentVersion
+    {
+        get
+        {
+            var version = typeof(AppSettings).Assembly.GetName().Version;
+            return version == null ? "0.5.2" : $"{version.Major}.{version.Minor}.{version.Build}";
+        }
+    }
 
     public static bool IsValidIdleTimeout(int minutes, bool allowNever = false) =>
         minutes is 1 or 3 or 5 or 10 or 15 or 30 || (allowNever && minutes == 0);
@@ -61,7 +74,13 @@ public sealed class AppSettings
     {
         ValidateIdleSettings();
         var temp = path + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
-        File.Move(temp, path, true);
+        byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(this, new JsonSerializerOptions { WriteIndented = true });
+        using (var stream = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough))
+        {
+            stream.Write(bytes);
+            stream.Flush(true);
+        }
+        if (File.Exists(path)) File.Replace(temp, path, null);
+        else File.Move(temp, path);
     }
 }

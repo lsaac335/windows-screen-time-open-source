@@ -2,9 +2,9 @@
 
 [简体中文](README.md) | [English](README.en.md)
 
-A local Windows desktop app for tracking screen-on time, foreground app time, estimated active time, and visible time across multiple windows. Current version: **0.5.2**.
+A local Windows desktop app for tracking screen-on time, foreground app time, estimated active time, and visible time across multiple windows. Current version: **0.5.3**.
 
-[Download for Windows x64](https://github.com/lsaac335/windows-screen-time-open-source/releases/tag/v0.5.2) · [English user guide](docs/USER_GUIDE.en.md)
+[Download for Windows x64](https://github.com/lsaac335/windows-screen-time-open-source/releases/tag/v0.5.3) · [English user guide](docs/USER_GUIDE.en.md)
 
 ![ScreenTime dashboard illustration showing screen-on time, app usage, and daily activity](docs/images/overview.svg)
 
@@ -43,7 +43,7 @@ Older recordings did not retain app ownership during excluded idle periods. Thei
 
 ## Download and run
 
-1. Download `ScreenTime-v0.5.2-Windows-x64.zip` from the [release page](https://github.com/lsaac335/windows-screen-time-open-source/releases/tag/v0.5.2).
+1. Download `ScreenTime-v0.5.3-Windows-x64.zip` from the [release page](https://github.com/lsaac335/windows-screen-time-open-source/releases/tag/v0.5.3).
 2. Extract the archive and run `ScreenTime.exe`. Keep the accompanying DLLs and runtime configuration files together.
 3. Recording starts automatically by default. Open the full dashboard to view history or change settings.
 

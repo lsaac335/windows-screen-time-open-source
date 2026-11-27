@@ -5,14 +5,17 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Media;
 
 namespace ScreenTime;
 
-/// <summary>Comparable app durations on a shared, zero-based scale. Native controls retain keyboard access.</summary>
+/// <summary>Comparable app durations on a shared, zero-based scale with application icons.</summary>
 public sealed class AppUsageBarChart : UserControl
 {
     public const int MaximumRows = 10;
+    private static readonly string[] FallbackColors = { "#6373F2", "#34B89A", "#E5A04B", "#4A9CE8", "#D46E9E", "#7C8AA6" };
+
     private readonly StackPanel _rows = new();
     private readonly Grid _axis = Columns();
     private readonly TextBlock _middleTick = Tick();
@@ -30,7 +33,7 @@ public sealed class AppUsageBarChart : UserControl
         var panel = new StackPanel();
         var label = Tick(); label.Text = "应用"; label.HorizontalAlignment = HorizontalAlignment.Left;
         _axis.Children.Add(label);
-        var scale = new Grid { Margin = new Thickness(0, 0, 0, 9) };
+        var scale = new Grid { Margin = new Thickness(0, 0, 0, 8) };
         var zero = Tick(); zero.Text = "0"; zero.HorizontalAlignment = HorizontalAlignment.Left;
         _middleTick.HorizontalAlignment = HorizontalAlignment.Center;
         _maximumTick.HorizontalAlignment = HorizontalAlignment.Right;
@@ -44,7 +47,8 @@ public sealed class AppUsageBarChart : UserControl
     }
 
     public void SetApps(IReadOnlyList<AppUsage> apps, string emptyMessage, bool showForeground = false,
-        bool foregroundIsLowerBound = false, double? totalSeconds = null, bool showVisible = false)
+        bool foregroundIsLowerBound = false, double? totalSeconds = null, bool showVisible = false,
+        Func<string, ImageSource?>? iconProvider = null)
     {
         double Seconds(AppUsage app) => showVisible ? app.VisibleSeconds : showForeground ? app.ForegroundSeconds : app.Seconds;
         string metric = showVisible ? "可见" : showForeground ? "前台" : "活跃";
@@ -68,7 +72,10 @@ public sealed class AppUsageBarChart : UserControl
             if (!_cache.TryGetValue(app.AppId, out var row)) _cache[app.AppId] = row = CreateRow();
             string name = string.IsNullOrWhiteSpace(app.Name) ? "未识别应用" : app.Name;
             row.Button.Tag = app;
-            row.Name.Text = (index + 1).ToString(CultureInfo.InvariantCulture) + "  " + name;
+            row.Rank.Text = (index + 1).ToString(CultureInfo.InvariantCulture);
+            row.Rank.SetResourceReference(TextBlock.ForegroundProperty, index < 3 ? "AccentText" : "Secondary");
+            row.Rank.FontWeight = index < 3 ? FontWeights.SemiBold : FontWeights.Normal;
+            row.Name.Text = name;
             double seconds = Seconds(app);
             double share = total > 0 ? Math.Clamp(seconds / total, 0, 1) : 0;
             string duration = lowerBound ? MainWindow.FormatForegroundDuration(seconds, true) : MainWindow.FormatDuration(seconds);
@@ -76,6 +83,37 @@ public sealed class AppUsageBarChart : UserControl
             double fraction = Math.Clamp(seconds / maximum, 0, 1);
             row.FillColumn.Width = new GridLength(fraction, GridUnitType.Star);
             row.RemainderColumn.Width = new GridLength(1 - fraction, GridUnitType.Star);
+            row.Fill.Opacity = Math.Max(0.45, 1.0 - index * 0.06);
+
+            ImageSource? icon = null;
+            if (iconProvider != null)
+            {
+                try { icon = iconProvider(app.AppId); } catch { }
+            }
+            if (icon != null)
+            {
+                if (!ReferenceEquals(row.IconSource, icon))
+                {
+                    row.IconBox.Background = Brushes.Transparent;
+                    row.IconBox.Child = new Image { Source = icon, Width = 20, Height = 20, Stretch = Stretch.Uniform };
+                    row.IconSource = icon;
+                    row.FallbackName = "";
+                }
+            }
+            else if (row.IconSource != null || row.FallbackName != name)
+            {
+                row.IconSource = null;
+                row.FallbackName = name;
+                string color = FallbackColors[(int)((uint)StableHash(app.AppId ?? name) % FallbackColors.Length)];
+                row.IconBox.Background = ThemeManager.LegacyBrush(color);
+                row.IconBox.Child = new TextBlock
+                {
+                    Text = name.Substring(0, Math.Min(name.Length, name[0] <= 127 ? 2 : 1)).ToUpperInvariant(),
+                    Foreground = Brushes.White, FontSize = 9.5, FontWeight = FontWeights.SemiBold,
+                    HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center
+                };
+            }
+
             string description = name + "\n活跃 " + MainWindow.FormatDuration(app.Seconds) +
                 "\n可见 " + MainWindow.FormatDuration(app.VisibleSeconds) +
                 "\n前台 " + MainWindow.FormatForegroundDuration(app.ForegroundSeconds, foregroundIsLowerBound) +
@@ -101,51 +139,77 @@ public sealed class AppUsageBarChart : UserControl
     private sealed class BarRow
     {
         public Button Button = new();
+        public TextBlock Rank = new();
+        public Border IconBox = new();
         public TextBlock Name = new();
         public TextBlock Value = new();
+        public Border Fill = new();
         public ColumnDefinition FillColumn = new();
         public ColumnDefinition RemainderColumn = new();
+        public ImageSource? IconSource;
+        public string FallbackName = "";
     }
 
     private BarRow CreateRow()
     {
         var row = new BarRow();
-        var grid = Columns(); grid.MinHeight = 34;
-        row.Name = new TextBlock { FontSize = 11, TextTrimming = TextTrimming.CharacterEllipsis,
-            VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0) };
+        var grid = Columns(); grid.MinHeight = 36;
+        var nameGrid = new Grid { Margin = new Thickness(0, 0, 12, 0) };
+        nameGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(20) });
+        nameGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(28) });
+        nameGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        row.Rank = new TextBlock { FontSize = 11.5, VerticalAlignment = VerticalAlignment.Center };
+        Typography.SetNumeralAlignment(row.Rank, FontNumeralAlignment.Tabular);
+
+        row.IconBox = new Border { Width = 22, Height = 22, CornerRadius = new CornerRadius(6), HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
+        Grid.SetColumn(row.IconBox, 1);
+
+        row.Name = new TextBlock { FontSize = 12.5, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
         row.Name.SetResourceReference(TextBlock.ForegroundProperty, "Ink");
-        grid.Children.Add(row.Name);
-        var track = new Border { Height = 12, CornerRadius = new CornerRadius(4), VerticalAlignment = VerticalAlignment.Center };
-        track.SetResourceReference(Border.BackgroundProperty, "ChartFuture");
+        Grid.SetColumn(row.Name, 2);
+
+        nameGrid.Children.Add(row.Rank); nameGrid.Children.Add(row.IconBox); nameGrid.Children.Add(row.Name);
+        grid.Children.Add(nameGrid);
+
+        var track = new Border { Height = 9, CornerRadius = new CornerRadius(4.5), VerticalAlignment = VerticalAlignment.Center };
+        track.SetResourceReference(Border.BackgroundProperty, "ProgressTrack");
         var bar = new Grid();
         bar.ColumnDefinitions.Add(row.FillColumn); bar.ColumnDefinitions.Add(row.RemainderColumn);
-        var fill = new Border { CornerRadius = new CornerRadius(4) };
-        fill.SetResourceReference(Border.BackgroundProperty, "AccentFill");
-        bar.Children.Add(fill); track.Child = bar;
+        row.Fill = new Border { CornerRadius = new CornerRadius(4.5) };
+        row.Fill.SetResourceReference(Border.BackgroundProperty, "ProgressBarBrush");
+        bar.Children.Add(row.Fill); track.Child = bar;
         Grid.SetColumn(track, 1); grid.Children.Add(track);
-        row.Value = new TextBlock { FontSize = 10, VerticalAlignment = VerticalAlignment.Center,
+
+        row.Value = new TextBlock { FontSize = 11.5, VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(10, 0, 0, 0) };
+        Typography.SetNumeralAlignment(row.Value, FontNumeralAlignment.Tabular);
         row.Value.SetResourceReference(TextBlock.ForegroundProperty, "Muted");
         Grid.SetColumn(row.Value, 2); grid.Children.Add(row.Value);
-        row.Button = new Button { Content = grid, Padding = new Thickness(0), Background = Brushes.Transparent,
-            BorderThickness = new Thickness(0), HorizontalContentAlignment = HorizontalAlignment.Stretch };
-        row.Button.SetResourceReference(StyleProperty, "RoundButton");
+
+        row.Button = new Button { Content = grid, Padding = new Thickness(6, 2, 6, 2), HorizontalContentAlignment = HorizontalAlignment.Stretch };
+        row.Button.SetResourceReference(StyleProperty, "RowButton");
         row.Button.Click += (_, _) => { if (row.Button.Tag is AppUsage current) AppSelected?.Invoke(current); };
         return row;
+    }
+
+    private static int StableHash(string value)
+    {
+        unchecked { int result = 17; foreach (char c in value) result = result * 31 + c; return result; }
     }
 
     private static Grid Columns()
     {
         var grid = new Grid();
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(188) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(132) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(136) });
         return grid;
     }
 
     private static TextBlock Tick()
     {
-        var text = new TextBlock { FontSize = 10, VerticalAlignment = VerticalAlignment.Top };
+        var text = new TextBlock { FontSize = 10.5, VerticalAlignment = VerticalAlignment.Top };
         text.SetResourceReference(TextBlock.ForegroundProperty, "Secondary");
         return text;
     }
